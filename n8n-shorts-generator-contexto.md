@@ -16,15 +16,15 @@ Workflow n8n para geração automática de YouTube Shorts a partir de vídeos lo
 | Google Drive Folder ID | `1wW1WhX1oyb4jbP0vQded403fQdmDMQQl` |
 | Destino dos Shorts | Mesma pasta do Drive (`short_01.mp4`, `short_02.mp4` …) |
 | Processamento de vídeo | FFmpeg + ffprobe (instalados via Dockerfile customizado) |
-| Transcrição (Opção 1 apenas) | OpenAI Whisper API (`whisper-1`) |
+| Transcrição (Opções 1 e 2) | whisper.cpp local (modelo `ggml-base`), sem API |
 | Análise semântica (Opção 1 apenas) | Anthropic Claude API (`claude-sonnet-4-6`) |
 
 ---
 
 ## Dois Workflows
 
-### Opção 1 — Semântico (Whisper + Claude + FFmpeg)
-Transcreve o vídeo, usa o Claude para identificar os melhores momentos semanticamente (gancho, conclusão, autocontido), gera legendas `.srt` queimadas e faz upload de cada Short com arquivo `_meta.json`.
+### Opção 1 — Semântico (Claude + Whisper.cpp local + FFmpeg)
+Transcreve o vídeo inteiro com whisper.cpp local (sem OpenAI), envia o SRT completo ao Claude, que identifica até **4 dos melhores momentos** semanticamente (gancho, conclusão, autocontido) para clipes de 75s–150s. Cada clipe é processado em loop sequencial: extrai áudio do trecho, gera legenda `.srt` via whisper.cpp, corta em 9:16 com crop centralizado, queima a legenda e faz upload do Short + arquivo `_meta.json` (título, hook, motivo). **Sem OpenAI, único custo é a API do Claude.**
 
 ### Opção 2 — Simples (FFmpeg only, zero custo de API)
 Detecta silêncios por volume de áudio (`silencedetect`), agrupa blocos de fala em clipes de 75s–150s, converte para 9:16 com crop centralizado e faz upload. **Sem OpenAI, sem Anthropic, custo $0.**
@@ -84,39 +84,70 @@ Upload → Drive (Google Drive)
 
 ---
 
-## Fluxo Completo — Opção 1 (Semântico, versão atual v12)
+## Fluxo Completo — Opção 1 (Semântico, versão atual v18-semantic-local)
 
 ```
-Google Drive Trigger
+Google Drive Trigger (novo arquivo na pasta)
   ↓
 Baixar Vídeo → Salvar na VPS
   ↓
-Paths: Vídeo (Code) → { videoName, videoPath, audioPath }
+Preparar Caminhos (Code) → { videoName, videoPath, audioPath }
   ↓
 FFprobe + Extrair Áudio (Execute Command)
-  → ffprobe mede duração
-  → ffmpeg extrai WAV 16kHz mono para Whisper
+  → ffprobe mede duração total
+  → ffmpeg extrai WAV 16kHz mono do vídeo inteiro
+  → stdout: "DURATION:847.3"
   ↓
-Paths: Áudio (Code) → passa paths + duration adiante
+Preparar Whisper Completo (Code)
+  → parseia DURATION do stdout, define srtBase/srtPath do transcript completo
   ↓
-Transcrever Whisper (HTTP Request → OpenAI)
-  → verbose_json com timestamp por palavra
+Whisper.cpp Transcrever Completo (Execute Command)
+  → whisper-cli (modelo ggml-base, local) transcreve o áudio inteiro em .srt
+  → faz `cat` do .srt gerado → stdout = transcrição completa com timestamps
+  ↓
+Preparar Claude (Code)
+  → repassa videoPath/videoName/duration + transcript (stdout)
   ↓
 Claude — Gerar Clipes (HTTP Request → Anthropic)
-  → retorna JSON com start, end, title, hook, reason por clipe
+  → recebe a transcrição SRT completa + duração total
+  → identifica até 4 dos MELHORES momentos (gancho, conclusão, autocontido, 75–150s)
+  → retorna JSON: [{ start, end, title, hook, reason }, ...] (máx. 4 itens)
   ↓
 Montar Clipes (Code)
-  → valida durações, gera .srt de legenda por clipe
-  → cada item tem: { clipStart, clipEnd, srtContent, srtPath, outPath, videoPath, ... }
+  → valida durações (75–150s), limita a 4 clipes
+  → cada item: { clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath,
+                  srtBase, srtPath, metaPath, metaContent, titleSlug, hook, reason }
   ↓
-FFmpeg Cortar (Execute Command)
-  → salva .srt no disco
-  → corta, converte 9:16 com crop, queima legendas
+Loop Over Items (Split In Batches, batchSize=1) — processa cada clipe sequencialmente
   ↓
-Upload → Drive
+Extrair Áudio do Clipe (Execute Command)
+  → ffmpeg corta só o trecho do clipe e extrai WAV 16kHz mono → audioPath
+  ↓
+Preparar Whisper (Code) → repassa campos do clipe
+  ↓
+Whisper.cpp Transcrever (Execute Command)
+  → whisper-cli transcreve o trecho do clipe → gera legenda em srtPath (.srt)
+  ↓
+Preparar Corte Final (Code) → repassa campos do clipe
+  ↓
+FFmpeg Cortar 9:16 + Legenda (Execute Command)
+  → salva metaContent (_meta.json) no disco
+  → corta o clipe, converte para 1080×1920 com scale+crop centralizado
+  → queima a legenda do srtPath (filtro subtitles + force_style)
+  → salva em /home/node/.n8n-files/short_NN_<slug>.mp4
+  ↓
+Preparar Leitura (Code) → outPath, metaPath, idx, titleSlug, videoName
+  ↓
+Ler Short do Disco (Read Binary File) → Upload Short → Drive
+  ↓
+Preparar Leitura Meta (Code) → repassa metaPath, idx, titleSlug
+  ↓
+Ler Metadados do Disco (Read Binary File) → Upload Metadados → Drive
+  ↓
+volta ao Loop Over Items até processar todos os clipes (máx. 4)
 ```
 
-**Total: 11 nodes**
+**Total: 21 nodes | APIs: apenas Anthropic Claude (sem OpenAI) | Transcrição: whisper.cpp local ($0)**
 
 ---
 
@@ -300,7 +331,7 @@ docker exec n8n ffprobe -version
 
 | Arquivo | Conteúdo |
 |---|---|
-| `workflow-shorts-semantic.json` | Opção 1 — v12, Whisper + Claude + FFmpeg, 11 nodes |
+| `workflow-shorts-semantic.json` | Opção 1 — v18-semantic-local, Claude (até 4 clipes) + Whisper.cpp local + FFmpeg + Loop Over Items, 21 nodes, sem OpenAI |
 | `workflow-shorts-simple.json` | Opção 2 — v16, FFmpeg + Whisper.cpp local, 14 nodes, $0 API |
 | `workflow-shorts-simple-loop.json` | Opção 2 — v17-loop, igual ao v16 mas processa cada clipe sequencialmente via `Loop Over Items`, garantindo múltiplos Shorts por execução, 16 nodes |
 | `n8n-video-silence-cutter.html` | App web para visualizar os pipelines e baixar os JSONs |
@@ -325,6 +356,7 @@ docker exec n8n ffprobe -version
 | v15 | Crop centralizado (`scale=-2:1920 + crop`) — vídeo preenche frame todo sem barras; nome do arquivo simplificado para `short_01.mp4` |
 | v16 | Adicionada legenda na Opção 2 via **whisper.cpp local** (modelo `base`, sem API): extrai áudio do clipe, transcreve com whisper-cli, queima `.srt` com `subtitles` + `force_style` no corte 9:16 |
 | v17-loop | Novo arquivo `workflow-shorts-simple-loop.json`: insere `Loop Over Items` (Split In Batches, batchSize=1) após `Montar Clipes`, processando cada clipe sequencialmente (áudio → whisper → corte+legenda → upload) e voltando ao loop até processar todos os clipes |
+| v18-semantic-local | Opção 1 reescrita: removida a OpenAI Whisper API — transcrição passa a ser feita com **whisper.cpp local** (vídeo inteiro), o `.srt` completo é enviado ao Claude, que escolhe **até 4 clipes**; adotado o mesmo padrão da Opção 2 (Loop Over Items, extrair áudio do clipe, whisper.cpp por clipe para legenda, corte 9:16 com crop centralizado); mantém upload de `_meta.json` (título, hook, motivo) por clipe |
 
 ---
 
@@ -335,3 +367,4 @@ docker exec n8n ffprobe -version
 - [ ] Subpasta por vídeo original no Drive (`/Shorts/nome-do-video/short_01.mp4`)
 - [ ] Thumbnail automática: capturar frame do segundo 2 de cada Short como capa
 - [x] Adicionar legendas à Opção 2 — implementado em v16 com whisper.cpp local (sem API)
+- [x] Remover OpenAI da Opção 1 e usar Claude para escolher até 4 clipes — implementado em v18-semantic-local

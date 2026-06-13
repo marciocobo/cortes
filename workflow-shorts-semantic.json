@@ -1,5 +1,5 @@
 {
-  "name": "YouTube Shorts Generator — Semântico (Whisper + Claude + FFmpeg)",
+  "name": "YouTube Shorts Generator — Semântico (Claude + Whisper.cpp local, zero API de transcrição)",
   "nodes": [
     {
       "id": "n1",
@@ -7,7 +7,7 @@
       "type": "n8n-nodes-base.googleDriveTrigger",
       "typeVersion": 1,
       "position": [
-        200,
+        160,
         300
       ],
       "parameters": {
@@ -21,7 +21,7 @@
         "triggerOn": "specificFolder",
         "folderToWatch": {
           "__rl": true,
-          "value": "YOUR_GDRIVE_FOLDER_ID",
+          "value": "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl",
           "mode": "id"
         },
         "event": "fileCreated"
@@ -29,11 +29,11 @@
     },
     {
       "id": "n2",
-      "name": "Baixar Vídeo (Drive)",
+      "name": "Baixar Vídeo",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        380,
+        340,
         300
       ],
       "parameters": {
@@ -51,7 +51,7 @@
       "type": "n8n-nodes-base.writeBinaryFile",
       "typeVersion": 1,
       "position": [
-        560,
+        520,
         300
       ],
       "parameters": {
@@ -65,91 +65,72 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        740,
+        700,
         300
       ],
       "parameters": {
-        "jsCode": "const trigger = $('Google Drive Trigger').first().json;\nconst videoName = trigger.name;\nconst videoId   = trigger.id || 'tmp';\nconst base      = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName,\n  videoId,\n  videoPath:  base + videoName,\n  audioPath:  base + 'audio_' + videoId + '.wav'\n}}];\n"
+        "jsCode": "const t = $('Google Drive Trigger').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName: t.name,\n  videoPath: base + t.name,\n  audioPath: base + 'audio_full.wav'\n}}];\n"
       }
     },
     {
       "id": "n5",
-      "name": "Medir Duração (ffprobe)",
+      "name": "FFprobe + Extrair Áudio",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        920,
+        880,
         300
       ],
       "parameters": {
-        "command": "=ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{{ $json.videoPath }}\""
-      }
-    },
-    {
-      "id": "n5b",
-      "name": "Extrair Áudio (FFmpeg)",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [
-        1100,
-        300
-      ],
-      "parameters": {
-        "command": "=ffmpeg -y -i \"{{ $json.videoPath }}\" -vn -ar 16000 -ac 1 -acodec pcm_s16le \"{{ $json.audioPath }}\""
+        "command": "=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{{ $json.videoPath }}\") && echo \"DURATION:$DUR\" && ffmpeg -y -i \"{{ $json.videoPath }}\" -vn -acodec pcm_s16le -ar 16000 -ac 1 \"{{ $json.audioPath }}\""
       }
     },
     {
       "id": "n6",
-      "name": "Transcrever Whisper",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
+      "name": "Preparar Whisper Completo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        1280,
+        1060,
         300
       ],
       "parameters": {
-        "method": "POST",
-        "url": "https://api.openai.com/v1/audio/transcriptions",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "Bearer YOUR_OPENAI_KEY"
-            }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "model",
-              "value": "whisper-1"
-            },
-            {
-              "name": "response_format",
-              "value": "verbose_json"
-            },
-            {
-              "name": "timestamp_granularities[]",
-              "value": "word"
-            },
-            {
-              "name": "language",
-              "value": "pt"
-            }
-          ]
-        }
+        "jsCode": "const c = $('Preparar Caminhos').first().json;\nconst out = $json.stdout || '';\nconst m = out.match(/DURATION:([\\d.]+)/);\nconst duration = m ? parseFloat(m[1]) : 0;\nconst srtBase = '/home/node/.n8n-files/transcript_full';\nreturn [{ json: { ...c, duration, srtBase, srtPath: srtBase + '.srt' } }];\n"
       }
     },
     {
       "id": "n7",
+      "name": "Whisper.cpp Transcrever Completo",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        300
+      ],
+      "parameters": {
+        "command": "=whisper -m /models/ggml-base.bin -f \"{{ $json.audioPath }}\" -l pt -osrt -of \"{{ $json.srtBase }}\" -np && cat \"{{ $json.srtPath }}\""
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Preparar Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Preparar Whisper Completo').first().json;\nconst transcript = $json.stdout || '';\nreturn [{ json: { ...c, transcript } }];\n"
+      }
+    },
+    {
+      "id": "n9",
       "name": "Claude — Gerar Clipes",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [
-        1460,
+        1600,
         300
       ],
       "parameters": {
@@ -174,80 +155,188 @@
         },
         "sendBody": true,
         "bodyContentType": "json",
-        "jsonBody": "{\"model\": \"claude-sonnet-4-6\", \"max_tokens\": 2000, \"system\": \"Voc\\u00ea \\u00e9 um editor s\\u00eanior de YouTube Shorts. Analise a transcri\\u00e7\\u00e3o e identifique os MELHORES momentos para Shorts de 75s a 150s. Cada clipe deve ser: AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUS\\u00c3O clara, coes\\u00e3o sem\\u00e2ntica, cortes em pausas de fala. Retorne APENAS JSON sem markdown: [{\\\"start\\\":0,\\\"end\\\":90,\\\"title\\\":\\\"slug\\\",\\\"hook\\\":\\\"Frase de abertura\\\",\\\"reason\\\":\\\"Motivo\\\"}]\", \"messages\": [{\"role\": \"user\", \"content\": \"Dura\\u00e7\\u00e3o total: {{ $('Medir Dura\\u00e7\\u00e3o (ffprobe)').first().json.stdout }}s\\n\\nTranscri\\u00e7\\u00e3o:\\n{{ JSON.stringify($json.words) }}\"}]}"
-      }
-    },
-    {
-      "id": "n8",
-      "name": "Processar Clipes + SRT",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1640,
-        300
-      ],
-      "parameters": {
-        "jsCode": "const raw = $json.content[0].text.trim()\n  .replace(/```json|```/g, '')\n  .replace(/^[^[]*/, '');\nconst clips = JSON.parse(raw);\nconst videoName = $('Google Drive Trigger').first().json.name;\nconst MIN_DUR = 75, MAX_DUR = 150;\nconst results = [];\nfor (let i = 0; i < clips.length; i++) {\n  const clip = clips[i];\n  const dur = clip.end - clip.start;\n  if (dur < MIN_DUR - 5 || dur > MAX_DUR + 10) continue;\n  const idx = String(i+1).padStart(2,'0');\n  const slug = (clip.title||'clip').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);\n  const srtPath  = '/home/node/.n8n-files/clip_'+idx+'.srt';\n  const metaPath = '/home/node/.n8n-files/clip_'+idx+'_meta.json';\n  const outPath  = '/home/node/.n8n-files/short_'+idx+'_'+slug+'.mp4';\n  const words = $('Transcrever Whisper').first().json.words || [];\n  const cw = words.filter(w => w.start >= clip.start-0.5 && w.end <= clip.end+0.5);\n  const ts = s => {\n    const t=Math.max(0,s-clip.start);\n    const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sc=Math.floor(t%60),ms=Math.round((t%1)*1000);\n    return [h,m,sc].map(x=>String(x).padStart(2,'0')).join(':')+','+String(ms).padStart(3,'0');\n  };\n  let srt='',li=1;\n  for (let w=0;w<cw.length;w+=6) {\n    const g=cw.slice(w,w+6);\n    if(g.length){srt+=li+'\\n'+ts(g[0].start)+' --> '+ts(g[g.length-1].end)+'\\n'+g.map(x=>x.word).join(' ')+'\\n\\n';li++;}\n  }\n  const ds=Math.round(dur);\n  const meta=JSON.stringify({index:i+1,title:clip.title,slug,hook:clip.hook||'',reason:clip.reason||'',start:clip.start,end:clip.end,duration:Math.floor(ds/60)+'m'+(ds%60)+'s',videoSource:videoName},null,2);\n  results.push({clipStart:clip.start,clipEnd:clip.end,srtContent:srt,metaContent:meta,srtPath,metaPath,outPath,videoName,titleSlug:slug,idx,hook:clip.hook||''});\n}\nreturn results;\n"
-      }
-    },
-    {
-      "id": "n9",
-      "name": "Salvar SRT + Metadados",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [
-        1820,
-        300
-      ],
-      "parameters": {
-        "command": "=printf '%s' \"{{ $json.srtContent }}\" > \"{{ $json.srtPath }}\" && printf '%s' \"{{ $json.metaContent }}\" > \"{{ $json.metaPath }}\""
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 3000, system: 'Você é um editor sênior de YouTube Shorts. Analise a transcrição em formato SRT (com timestamps) e identifique até 4 dos MELHORES momentos para Shorts de 75s a 150s. Cada clipe deve ser AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUSÃO clara, coesão semântica, e os cortes devem cair em pausas de fala. Use os timestamps do SRT (convertidos para segundos) para start/end. Retorne APENAS JSON sem markdown, no máximo 4 itens, ordenados do melhor para o pior: [{\\\"start\\\":0,\\\"end\\\":90,\\\"title\\\":\\\"slug-curto\\\",\\\"hook\\\":\\\"Frase de abertura\\\",\\\"reason\\\":\\\"Motivo da escolha\\\"}]', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}"
       }
     },
     {
       "id": "n10",
-      "name": "Cortar + 9:16 + Legendas",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
+      "name": "Montar Clipes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        2000,
+        1780,
         300
       ],
       "parameters": {
-        "command": "=ffmpeg -ss \"{{ $json.clipStart }}\" -to \"{{ $json.clipEnd }}\" -i \"{{ $json.videoName_path }}\" -vf \"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,subtitles='{{ $json.srtPath }}':force_style='Fontsize=22,Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Alignment=2,MarginV=60'\" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart \"{{ $json.outPath }}\""
+        "jsCode": "const raw = $json.content[0].text.trim()\n  .replace(/```json|```/g, '')\n  .replace(/^[^[]*/, '');\nconst clips = JSON.parse(raw).slice(0, 4);\nconst c = $('Preparar Claude').first().json;\nconst vp = c.videoPath;\nconst vn = c.videoName;\nconst MIN_DUR = 75, MAX_DUR = 150;\nconst base = '/home/node/.n8n-files/';\nconst results = [];\nfor (let i = 0; i < clips.length; i++) {\n  const clip = clips[i];\n  const dur = clip.end - clip.start;\n  if (dur < MIN_DUR - 10 || dur > MAX_DUR + 15) continue;\n  const idx = String(results.length + 1).padStart(2, '0');\n  const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);\n  const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';\n  const audioPath = base + 'clip_' + idx + '.wav';\n  const srtBase   = base + 'clip_' + idx;\n  const srtPath   = srtBase + '.srt';\n  const metaPath  = base + 'clip_' + idx + '_meta.json';\n  const ds = Math.round(dur);\n  const metaContent = JSON.stringify({\n    index: results.length + 1,\n    title: clip.title,\n    slug,\n    hook: clip.hook || '',\n    reason: clip.reason || '',\n    start: clip.start,\n    end: clip.end,\n    duration: Math.floor(ds / 60) + 'm' + (ds % 60) + 's',\n    videoSource: vn\n  }, null, 2);\n  results.push({\n    clipStart: Math.max(0, clip.start),\n    clipEnd: clip.end,\n    idx,\n    titleSlug: slug,\n    hook: clip.hook || '',\n    reason: clip.reason || '',\n    videoPath: vp,\n    videoName: vn,\n    outPath,\n    audioPath,\n    srtBase,\n    srtPath,\n    metaPath,\n    metaContent\n  });\n}\nreturn results;\n"
+      }
+    },
+    {
+      "id": "n10a",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1960,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "n10b",
+      "name": "Extrair Áudio do Clipe",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2180,
+        440
+      ],
+      "parameters": {
+        "command": "=ffmpeg -y -ss \"{{ $json.clipStart }}\" -to \"{{ $json.clipEnd }}\" -i \"{{ $json.videoPath }}\" -vn -acodec pcm_s16le -ar 16000 -ac 1 \"{{ $json.audioPath }}\""
+      }
+    },
+    {
+      "id": "n10c",
+      "name": "Preparar Whisper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
+      }
+    },
+    {
+      "id": "n10d",
+      "name": "Whisper.cpp Transcrever",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2540,
+        440
+      ],
+      "parameters": {
+        "command": "=whisper -m /models/ggml-base.bin -f \"{{ $json.audioPath }}\" -l pt -osrt -of \"{{ $json.srtBase }}\" -np"
+      }
+    },
+    {
+      "id": "n10e",
+      "name": "Preparar Corte Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
       }
     },
     {
       "id": "n11",
+      "name": "FFmpeg Cortar 9:16 + Legenda",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2900,
+        440
+      ],
+      "parameters": {
+        "command": "=printf '%s' '{{ $json.metaContent }}' > \"{{ $json.metaPath }}\" && ffmpeg -y -ss \"{{ $json.clipStart }}\" -to \"{{ $json.clipEnd }}\" -i \"{{ $json.videoPath }}\" -vf \"scale=-2:1920,crop=1080:1920:(iw-1080)/2:(ih-1920)/2,subtitles={{ $json.srtPath }}:force_style='FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Alignment=2,MarginV=18'\" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart \"{{ $json.outPath }}\""
+      }
+    },
+    {
+      "id": "n12",
+      "name": "Preparar Leitura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const clip = $('Loop Over Items').item.json;\nreturn [{ json: {\n  outPath:   clip.outPath,\n  metaPath:  clip.metaPath,\n  idx:       clip.idx,\n  titleSlug: clip.titleSlug,\n  videoName: clip.videoName\n}}];\n"
+      }
+    },
+    {
+      "id": "n13",
+      "name": "Ler Short do Disco",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        3260,
+        440
+      ],
+      "parameters": {
+        "filePath": "={{ $json.outPath }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n14",
       "name": "Upload Short → Drive",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        2200,
-        300
+        3440,
+        440
       ],
       "parameters": {
         "operation": "upload",
-        "name": "={{ 'short_' + $json.idx + '_' + $json.titleSlug + '.mp4' }}",
+        "name": "={{ 'short_' + $('Preparar Leitura').item.json.idx + '_' + $('Preparar Leitura').item.json.titleSlug + '.mp4' }}",
         "parents": [
-          "YOUR_GDRIVE_FOLDER_ID"
+          "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
         ],
         "inputDataFieldName": "data"
       }
     },
     {
-      "id": "n12",
+      "id": "n15",
+      "name": "Preparar Leitura Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3620,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const clip = $('Loop Over Items').item.json;\nreturn [{ json: {\n  metaPath:  clip.metaPath,\n  idx:       clip.idx,\n  titleSlug: clip.titleSlug,\n  videoName: clip.videoName\n}}];\n"
+      }
+    },
+    {
+      "id": "n16",
+      "name": "Ler Metadados do Disco",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        3800,
+        440
+      ],
+      "parameters": {
+        "filePath": "={{ $json.metaPath }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n17",
       "name": "Upload Metadados → Drive",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        2200,
-        500
+        3980,
+        440
       ],
       "parameters": {
         "operation": "upload",
-        "name": "={{ 'short_' + $json.idx + '_' + $json.titleSlug + '_meta.json' }}",
+        "name": "={{ 'short_' + $('Preparar Leitura Meta').item.json.idx + '_' + $('Preparar Leitura Meta').item.json.titleSlug + '_meta.json' }}",
         "parents": [
-          "YOUR_GDRIVE_FOLDER_ID"
+          "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
         ],
         "inputDataFieldName": "data"
       }
@@ -258,14 +347,14 @@
       "main": [
         [
           {
-            "node": "Baixar Vídeo (Drive)",
+            "node": "Baixar Vídeo",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Baixar Vídeo (Drive)": {
+    "Baixar Vídeo": {
       "main": [
         [
           {
@@ -291,36 +380,47 @@
       "main": [
         [
           {
-            "node": "Medir Duração (ffprobe)",
+            "node": "FFprobe + Extrair Áudio",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Medir Duração (ffprobe)": {
+    "FFprobe + Extrair Áudio": {
       "main": [
         [
           {
-            "node": "Extrair Áudio (FFmpeg)",
+            "node": "Preparar Whisper Completo",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Extrair Áudio (FFmpeg)": {
+    "Preparar Whisper Completo": {
       "main": [
         [
           {
-            "node": "Transcrever Whisper",
+            "node": "Whisper.cpp Transcrever Completo",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Transcrever Whisper": {
+    "Whisper.cpp Transcrever Completo": {
+      "main": [
+        [
+          {
+            "node": "Preparar Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Claude": {
       "main": [
         [
           {
@@ -335,36 +435,103 @@
       "main": [
         [
           {
-            "node": "Processar Clipes + SRT",
+            "node": "Montar Clipes",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Processar Clipes + SRT": {
+    "Montar Clipes": {
       "main": [
         [
           {
-            "node": "Salvar SRT + Metadados",
+            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Salvar SRT + Metadados": {
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Extrair Áudio do Clipe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Áudio do Clipe": {
       "main": [
         [
           {
-            "node": "Cortar + 9:16 + Legendas",
+            "node": "Preparar Whisper",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Cortar + 9:16 + Legendas": {
+    "Preparar Whisper": {
+      "main": [
+        [
+          {
+            "node": "Whisper.cpp Transcrever",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper.cpp Transcrever": {
+      "main": [
+        [
+          {
+            "node": "Preparar Corte Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Corte Final": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg Cortar 9:16 + Legenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg Cortar 9:16 + Legenda": {
+      "main": [
+        [
+          {
+            "node": "Preparar Leitura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Leitura": {
+      "main": [
+        [
+          {
+            "node": "Ler Short do Disco",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Short do Disco": {
       "main": [
         [
           {
@@ -372,10 +539,47 @@
             "type": "main",
             "index": 0
           }
-        ],
+        ]
+      ]
+    },
+    "Upload Short → Drive": {
+      "main": [
+        [
+          {
+            "node": "Preparar Leitura Meta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Leitura Meta": {
+      "main": [
+        [
+          {
+            "node": "Ler Metadados do Disco",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Metadados do Disco": {
+      "main": [
         [
           {
             "node": "Upload Metadados → Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Metadados → Drive": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
@@ -387,6 +591,7 @@
     "executionOrder": "v1"
   },
   "meta": {
-    "version": "v10"
+    "version": "v18-semantic-local",
+    "gdriveFolder": "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
   }
 }
