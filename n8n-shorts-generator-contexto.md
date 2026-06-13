@@ -31,7 +31,7 @@ Detecta silêncios por volume de áudio (`silencedetect`), agrupa blocos de fala
 
 ---
 
-## Fluxo Completo — Opção 2 (Simples, versão atual v15)
+## Fluxo Completo — Opção 2 (Simples, versão atual v16)
 
 ```
 Google Drive Trigger (novo arquivo na pasta)
@@ -50,10 +50,24 @@ FFprobe + Silêncios (Execute Command)
   ↓
 Montar Clipes (Code Node)
   → parseia stdout, agrupa blocos de fala em janelas de 75s–150s
-  → cada item do output tem: { clipStart, clipEnd, idx, videoPath, videoName, outPath }
+  → cada item do output tem: { clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srtBase, srtPath }
   ↓
-FFmpeg Cortar 9:16 (Execute Command)  ← recebe $json de Montar Clipes
+Extrair Áudio do Clipe (Execute Command)  ← recebe $json de Montar Clipes
+  → ffmpeg corta só o trecho do clipe e extrai WAV 16kHz mono → audioPath
+  ↓
+Preparar Whisper (Code Node)
+  → repassa os campos de Montar Clipes (pois Execute Command só passa stdout)
+  ↓
+Whisper.cpp Transcrever (Execute Command)
+  → whisper-cli (modelo ggml-base, local, sem API) transcreve audioPath
+  → gera legenda em srtPath (.srt)
+  ↓
+Preparar Corte Final (Code Node)
+  → repassa os campos de Montar Clipes
+  ↓
+FFmpeg Cortar 9:16 + Legenda (Execute Command)
   → corta o clipe, converte para 1080×1920 com scale+crop centralizado
+  → queima a legenda do srtPath (filtro subtitles + force_style)
   → salva em /home/node/.n8n-files/short_01.mp4
   ↓
 Preparar Leitura (Code Node)
@@ -66,7 +80,7 @@ Upload → Drive (Google Drive)
   → envia short_01.mp4 para a pasta 1wW1WhX1oyb4jbP0vQded403fQdmDMQQl
 ```
 
-**Total: 10 nodes | APIs: 0 | Custo: $0**
+**Total: 14 nodes | APIs: 0 | Custo: $0** (transcrição via whisper.cpp local, modelo `base`)
 
 ---
 
@@ -194,7 +208,7 @@ ffprobe ... "{{ $json.videoPath }}"
 
 ## Setup Docker na VPS
 
-### Dockerfile (FFmpeg no n8n 2.x)
+### Dockerfile (FFmpeg + Whisper.cpp no n8n 2.x)
 
 ```dockerfile
 ARG N8N_VERSION=latest
@@ -202,6 +216,15 @@ ARG ALPINE_VERSION=3.22
 
 FROM alpine:${ALPINE_VERSION} AS apktools
 RUN apk add --no-cache apk-tools-static
+
+# Build whisper.cpp (transcrição local, sem API)
+FROM alpine:${ALPINE_VERSION} AS whisperbuild
+RUN apk add --no-cache git build-base cmake linux-headers
+RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git /whisper.cpp \
+    && cd /whisper.cpp \
+    && cmake -B build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build -j$(nproc) --config Release
+RUN /whisper.cpp/models/download-ggml-model.sh base /whisper.cpp/models
 
 FROM n8nio/n8n:${N8N_VERSION}
 ARG ALPINE_VERSION
@@ -215,8 +238,16 @@ RUN mkdir -p /etc/apk/keys \
        "$ALPINE_VERSION" "$ALPINE_VERSION" > /etc/apk/repositories \
     && /sbin/apk.static add apk-tools \
     && rm /sbin/apk.static \
-    && apk add --no-cache ffmpeg \
+    && apk add --no-cache ffmpeg libstdc++ libgomp \
     && rm -rf /var/cache/apk/*
+
+# Binário whisper + libs + modelo ggml-base
+COPY --from=whisperbuild /whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper
+COPY --from=whisperbuild /whisper.cpp/build/src/libwhisper.so* /usr/local/lib/
+COPY --from=whisperbuild /whisper.cpp/build/ggml/src/libggml*.so* /usr/local/lib/
+RUN mkdir -p /models
+COPY --from=whisperbuild /whisper.cpp/models/ggml-base.bin /models/ggml-base.bin
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
 USER node
 ```
@@ -291,6 +322,7 @@ docker exec n8n ffprobe -version
 | v13 | Opção 2 reescrita sem nenhuma API (FFmpeg only) |
 | v14 | Adicionado Read Binary File antes do Upload (FFmpeg não gera binário no n8n) |
 | v15 | Crop centralizado (`scale=-2:1920 + crop`) — vídeo preenche frame todo sem barras; nome do arquivo simplificado para `short_01.mp4` |
+| v16 | Adicionada legenda na Opção 2 via **whisper.cpp local** (modelo `base`, sem API): extrai áudio do clipe, transcreve com whisper-cli, queima `.srt` com `subtitles` + `force_style` no corte 9:16 |
 
 ---
 
@@ -300,4 +332,4 @@ docker exec n8n ffprobe -version
 - [ ] Notificação via Telegram/Slack ao concluir, com lista dos Shorts e duração de cada um
 - [ ] Subpasta por vídeo original no Drive (`/Shorts/nome-do-video/short_01.mp4`)
 - [ ] Thumbnail automática: capturar frame do segundo 2 de cada Short como capa
-- [ ] Adicionar legendas à Opção 2 usando Whisper como etapa opcional pós-corte
+- [x] Adicionar legendas à Opção 2 — implementado em v16 com whisper.cpp local (sem API)
