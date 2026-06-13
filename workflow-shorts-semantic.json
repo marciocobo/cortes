@@ -1,0 +1,392 @@
+{
+  "name": "YouTube Shorts Generator — Semântico (Whisper + Claude + FFmpeg)",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "YOUR_GDRIVE_FOLDER_ID",
+          "mode": "id"
+        },
+        "event": "fileCreated"
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Baixar Vídeo (Drive)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        380,
+        300
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Salvar na VPS",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ],
+      "parameters": {
+        "fileName": "=/home/node/.n8n-files/{{ $('Google Drive Trigger').first().json.name }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Preparar Caminhos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const trigger = $('Google Drive Trigger').first().json;\nconst videoName = trigger.name;\nconst videoId   = trigger.id || 'tmp';\nconst base      = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName,\n  videoId,\n  videoPath:  base + videoName,\n  audioPath:  base + 'audio_' + videoId + '.wav'\n}}];\n"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Medir Duração (ffprobe)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "command": "=ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{{ $json.videoPath }}\""
+      }
+    },
+    {
+      "id": "n5b",
+      "name": "Extrair Áudio (FFmpeg)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "command": "=ffmpeg -y -i \"{{ $json.videoPath }}\" -vn -ar 16000 -ac 1 -acodec pcm_s16le \"{{ $json.audioPath }}\""
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Transcrever Whisper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1280,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_OPENAI_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "response_format",
+              "value": "verbose_json"
+            },
+            {
+              "name": "timestamp_granularities[]",
+              "value": "word"
+            },
+            {
+              "name": "language",
+              "value": "pt"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Claude — Gerar Clipes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1460,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "YOUR_ANTHROPIC_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\"model\": \"claude-sonnet-4-6\", \"max_tokens\": 2000, \"system\": \"Voc\\u00ea \\u00e9 um editor s\\u00eanior de YouTube Shorts. Analise a transcri\\u00e7\\u00e3o e identifique os MELHORES momentos para Shorts de 75s a 150s. Cada clipe deve ser: AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUS\\u00c3O clara, coes\\u00e3o sem\\u00e2ntica, cortes em pausas de fala. Retorne APENAS JSON sem markdown: [{\\\"start\\\":0,\\\"end\\\":90,\\\"title\\\":\\\"slug\\\",\\\"hook\\\":\\\"Frase de abertura\\\",\\\"reason\\\":\\\"Motivo\\\"}]\", \"messages\": [{\"role\": \"user\", \"content\": \"Dura\\u00e7\\u00e3o total: {{ $('Medir Dura\\u00e7\\u00e3o (ffprobe)').first().json.stdout }}s\\n\\nTranscri\\u00e7\\u00e3o:\\n{{ JSON.stringify($json.words) }}\"}]}"
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Processar Clipes + SRT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const raw = $json.content[0].text.trim()\n  .replace(/```json|```/g, '')\n  .replace(/^[^[]*/, '');\nconst clips = JSON.parse(raw);\nconst videoName = $('Google Drive Trigger').first().json.name;\nconst MIN_DUR = 75, MAX_DUR = 150;\nconst results = [];\nfor (let i = 0; i < clips.length; i++) {\n  const clip = clips[i];\n  const dur = clip.end - clip.start;\n  if (dur < MIN_DUR - 5 || dur > MAX_DUR + 10) continue;\n  const idx = String(i+1).padStart(2,'0');\n  const slug = (clip.title||'clip').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);\n  const srtPath  = '/home/node/.n8n-files/clip_'+idx+'.srt';\n  const metaPath = '/home/node/.n8n-files/clip_'+idx+'_meta.json';\n  const outPath  = '/home/node/.n8n-files/short_'+idx+'_'+slug+'.mp4';\n  const words = $('Transcrever Whisper').first().json.words || [];\n  const cw = words.filter(w => w.start >= clip.start-0.5 && w.end <= clip.end+0.5);\n  const ts = s => {\n    const t=Math.max(0,s-clip.start);\n    const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),sc=Math.floor(t%60),ms=Math.round((t%1)*1000);\n    return [h,m,sc].map(x=>String(x).padStart(2,'0')).join(':')+','+String(ms).padStart(3,'0');\n  };\n  let srt='',li=1;\n  for (let w=0;w<cw.length;w+=6) {\n    const g=cw.slice(w,w+6);\n    if(g.length){srt+=li+'\\n'+ts(g[0].start)+' --> '+ts(g[g.length-1].end)+'\\n'+g.map(x=>x.word).join(' ')+'\\n\\n';li++;}\n  }\n  const ds=Math.round(dur);\n  const meta=JSON.stringify({index:i+1,title:clip.title,slug,hook:clip.hook||'',reason:clip.reason||'',start:clip.start,end:clip.end,duration:Math.floor(ds/60)+'m'+(ds%60)+'s',videoSource:videoName},null,2);\n  results.push({clipStart:clip.start,clipEnd:clip.end,srtContent:srt,metaContent:meta,srtPath,metaPath,outPath,videoName,titleSlug:slug,idx,hook:clip.hook||''});\n}\nreturn results;\n"
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Salvar SRT + Metadados",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1820,
+        300
+      ],
+      "parameters": {
+        "command": "=printf '%s' \"{{ $json.srtContent }}\" > \"{{ $json.srtPath }}\" && printf '%s' \"{{ $json.metaContent }}\" > \"{{ $json.metaPath }}\""
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Cortar + 9:16 + Legendas",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        300
+      ],
+      "parameters": {
+        "command": "=ffmpeg -ss \"{{ $json.clipStart }}\" -to \"{{ $json.clipEnd }}\" -i \"{{ $json.videoName_path }}\" -vf \"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,subtitles='{{ $json.srtPath }}':force_style='Fontsize=22,Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Alignment=2,MarginV=60'\" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart \"{{ $json.outPath }}\""
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Upload Short → Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2200,
+        300
+      ],
+      "parameters": {
+        "operation": "upload",
+        "name": "={{ 'short_' + $json.idx + '_' + $json.titleSlug + '.mp4' }}",
+        "parents": [
+          "YOUR_GDRIVE_FOLDER_ID"
+        ],
+        "inputDataFieldName": "data"
+      }
+    },
+    {
+      "id": "n12",
+      "name": "Upload Metadados → Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2200,
+        500
+      ],
+      "parameters": {
+        "operation": "upload",
+        "name": "={{ 'short_' + $json.idx + '_' + $json.titleSlug + '_meta.json' }}",
+        "parents": [
+          "YOUR_GDRIVE_FOLDER_ID"
+        ],
+        "inputDataFieldName": "data"
+      }
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Baixar Vídeo (Drive)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar Vídeo (Drive)": {
+      "main": [
+        [
+          {
+            "node": "Salvar na VPS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar na VPS": {
+      "main": [
+        [
+          {
+            "node": "Preparar Caminhos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Caminhos": {
+      "main": [
+        [
+          {
+            "node": "Medir Duração (ffprobe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Medir Duração (ffprobe)": {
+      "main": [
+        [
+          {
+            "node": "Extrair Áudio (FFmpeg)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Áudio (FFmpeg)": {
+      "main": [
+        [
+          {
+            "node": "Transcrever Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcrever Whisper": {
+      "main": [
+        [
+          {
+            "node": "Claude — Gerar Clipes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude — Gerar Clipes": {
+      "main": [
+        [
+          {
+            "node": "Processar Clipes + SRT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Clipes + SRT": {
+      "main": [
+        [
+          {
+            "node": "Salvar SRT + Metadados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar SRT + Metadados": {
+      "main": [
+        [
+          {
+            "node": "Cortar + 9:16 + Legendas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cortar + 9:16 + Legendas": {
+      "main": [
+        [
+          {
+            "node": "Upload Short → Drive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Upload Metadados → Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "version": "v10"
+  }
+}
