@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>n8n · YouTube Shorts Generator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap');
+  :root {
+    --bg:#0e0f14;--surface:#161820;--surface2:#1e2028;--border:#2a2d3a;
+    --accent:#ff6b35;--accent2:#a78bfa;--green:#34d399;--blue:#60a5fa;
+    --yellow:#fbbf24;--red:#f87171;--text:#e2e4f0;--muted:#6b7280;
+    --mono:'IBM Plex Mono',monospace;--sans:'Inter',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+  header{padding:18px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:16px;background:var(--surface)}
+  .logo{font-family:var(--mono);font-weight:600;font-size:18px;color:var(--accent);letter-spacing:-0.5px}
+  .logo span{color:var(--muted)}
+  header p{font-size:12px;color:var(--muted);margin-left:auto}
+  .tabs{display:flex;border-bottom:1px solid var(--border);background:var(--surface);padding:0 32px;overflow-x:auto}
+  .tab{padding:13px 18px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;display:flex;align-items:center;gap:7px;white-space:nowrap}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .tab-badge{background:var(--surface2);border:1px solid var(--border);font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px;color:var(--muted)}
+  .tab.active .tab-badge{background:rgba(255,107,53,.12);border-color:rgba(255,107,53,.3);color:var(--accent)}
+  .content{display:none}.content.active{display:block}
+
+  /* PIPELINE */
+  .pipeline-section{padding:32px}
+  .pipeline-header{margin-bottom:28px}
+  .pipeline-header h2{font-size:22px;font-weight:600;margin-bottom:6px}
+  .pipeline-header p{font-size:13px;color:var(--muted);line-height:1.6}
+  .badge-mode{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:4px;margin-bottom:12px}
+  .badge-mode.semantic{background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.3);color:var(--accent2)}
+  .badge-mode.simple{background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);color:var(--blue)}
+  .badge-mode.shorts{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--red)}
+  .pipeline{display:flex;flex-direction:column;gap:0}
+  .node{display:flex;gap:20px;position:relative}
+  .node-line{display:flex;flex-direction:column;align-items:center;width:48px;flex-shrink:0}
+  .node-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid var(--border);position:relative;z-index:1}
+  .node-connector{width:2px;flex:1;min-height:20px;background:linear-gradient(to bottom,var(--border),transparent);margin:4px 0}
+  .node:last-child .node-connector{display:none}
+  .node-body{flex:1;padding-bottom:24px}
+  .node-header{display:flex;align-items:center;gap:10px;margin-bottom:7px;padding-top:10px;flex-wrap:wrap}
+  .node-name{font-weight:600;font-size:14px}
+  .node-type{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:4px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
+  .node-desc{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:10px}
+  .node-code{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-family:var(--mono);font-size:11.5px;color:#a5b4fc;overflow-x:auto;white-space:pre;line-height:1.6}
+  .code-comment{color:var(--muted)}.code-key{color:#f9a8d4}.code-val{color:#86efac}.code-str{color:#fde68a}.code-fn{color:#93c5fd}
+  .icon-trigger{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.3)}
+  .icon-ffmpeg{background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.3)}
+  .icon-whisper{background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.3)}
+  .icon-claude{background:rgba(255,107,53,.12);border-color:rgba(255,107,53,.3)}
+  .icon-code{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.3)}
+  .icon-output{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3)}
+  .icon-shorts{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3)}
+  .icon-loop{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.3)}
+
+  /* highlight box */
+  .info-box{background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.25);border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:var(--blue);line-height:1.7}
+  .info-box strong{color:var(--text);display:block;margin-bottom:4px}
+
+  /* CONFIG */
+  .config-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:32px}
+  @media(max-width:700px){.config-grid{grid-template-columns:1fr}}
+  .config-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px}
+  .config-card h3{font-size:14px;font-weight:600;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+  .field input,.field select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;transition:border-color .2s}
+  .field input:focus,.field select:focus{border-color:var(--accent)}
+  .field select option{background:var(--surface2)}
+  .field-hint{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
+  .range-display{font-family:var(--mono);font-size:13px;color:var(--accent);margin-top:6px}
+
+  /* toggle switch */
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px}
+  .toggle-row .toggle-label{font-size:13px;font-weight:500}
+  .toggle-row .toggle-hint{font-size:11px;color:var(--muted);margin-top:2px}
+  .switch{position:relative;display:inline-block;width:42px;height:24px;flex-shrink:0}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;cursor:pointer;inset:0;background-color:var(--border);transition:.2s;border-radius:24px}
+  .slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background-color:var(--text);transition:.2s;border-radius:50%}
+  input:checked + .slider{background-color:var(--accent)}
+  input:checked + .slider:before{transform:translateX(18px)}
+
+  /* DOWNLOAD */
+  .download-section{padding:32px}
+  .download-header{margin-bottom:24px}
+  .download-header h2{font-size:22px;font-weight:600;margin-bottom:6px}
+  .download-header p{font-size:13px;color:var(--muted);line-height:1.6}
+  .download-cards{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px}
+  @media(max-width:700px){.download-cards{grid-template-columns:1fr}}
+  .dl-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:12px}
+  .dl-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .dl-card h3{font-size:15px;font-weight:600;margin-bottom:4px}
+  .dl-card p{font-size:12px;color:var(--muted);line-height:1.5}
+  .dl-card-icon{font-size:28px;flex-shrink:0}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .2s;font-family:var(--sans)}
+  .btn-primary{background:var(--accent);color:white}.btn-primary:hover{background:#e85e28}
+  .btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{border-color:var(--muted)}
+  .btn-full{width:100%}
+  .dl-meta{display:flex;gap:8px;flex-wrap:wrap}
+  .dl-tag{font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:4px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
+  .dl-tag.hot{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.3);color:var(--red)}
+  .json-preview{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .json-preview-header{padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .json-preview-header span{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .json-preview pre{padding:20px;font-family:var(--mono);font-size:11px;color:#a5b4fc;overflow-x:auto;max-height:400px;overflow-y:auto;line-height:1.7}
+  .steps-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  .step{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px}
+  .step-num{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);width:22px;flex-shrink:0;padding-top:1px}
+  .step-content strong{display:block;font-size:13px;font-weight:500;margin-bottom:2px}
+  .step-content span{font-size:12px;color:var(--muted);line-height:1.5}
+  .toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#0a0a0a;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:500;display:none;align-items:center;gap:8px;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .toast.show{display:flex;animation:slideUp .3s ease}
+  @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+  ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--surface2)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">n8n<span>·</span>YouTube Shorts Generator</div>
+  <p>Corte automático · Legendas opcionais (Whisper.cpp local) · Formato 9:16 · Google Drive</p>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('pipeline1')" id="tab-pipeline1">
+    🧠 Opção 1 — Semântico <span class="tab-badge">Whisper + Claude</span>
+  </div>
+  <div class="tab" onclick="switchTab('pipeline2')" id="tab-pipeline2">
+    ⚡ Opção 2 — Simples <span class="tab-badge">FFmpeg + Whisper.cpp local</span>
+  </div>
+  <div class="tab" onclick="switchTab('config')" id="tab-config">
+    ⚙️ Configurar
+  </div>
+  <div class="tab" onclick="switchTab('download')" id="tab-download">
+    ⬇️ Download
+  </div>
+</div>
+
+<!-- ══════════════════ PIPELINE 1 ══════════════════ -->
+<div class="content active" id="content-pipeline1">
+<div class="pipeline-section">
+  <div class="pipeline-header">
+    <div class="badge-mode shorts">🎬 SHORTS GENERATOR — Whisper + Claude + FFmpeg</div>
+    <h2>Identificação Semântica de Melhores Momentos</h2>
+    <p>Claude lê a transcrição completa do vídeo e decide <em>quais trechos fazem sentido como Shorts</em> — não apenas por duração, mas por coesão de ideia, gancho de abertura e conclusão clara. Cada Short gerado vem com um arquivo de metadados JSON com o hook e o motivo da escolha.</p>
+  </div>
+
+  <div class="info-box">
+    <strong>🧠 Como o Claude identifica os cortes</strong>
+    Ele analisa mudanças de assunto, frases com gancho ("O erro mais comum é..."), conclusões naturais e pausas longas que coincidem com transições de ideia. Cada clipe retorna <b>hook</b> (frase de abertura para usar na capa/descrição) e <b>reason</b> (justificativa editorial). Os cortes nunca ocorrem no meio de uma frase — sempre em pausa de fala detectada pelo Whisper.
+  </div>
+
+  <div class="pipeline">
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-trigger">🔔</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Google Drive Trigger — novo vídeo</span><span class="node-type">Google Drive Trigger</span></div>
+        <p class="node-desc">Monitora a pasta configurada. Dispara ao detectar um arquivo novo com mimeType de vídeo.</p>
+        <div class="node-code"><span class="code-key">Event:</span> <span class="code-val">File Created</span>
+<span class="code-key">Folder:</span> <span class="code-str">{{ config.gdriveFolderId }}</span>
+<span class="code-key">Poll:</span> <span class="code-val">Every 1 minute</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-trigger">⬇️</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Baixar + Salvar na VPS</span><span class="node-type">Google Drive → Write Binary File</span></div>
+        <p class="node-desc">Download do arquivo e persistência em <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/home/node/.n8n-files/</code> para processamento local.</p>
+        <div class="node-code"><span class="code-key">Operation:</span> <span class="code-val">Download</span>  |  <span class="code-key">File ID:</span> <span class="code-str">{{ $json.id }}</span>
+<span class="code-key">Write to:</span> <span class="code-str">/home/node/.n8n-files/{{ $json.name }}</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-ffmpeg">📏</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Preparar Caminhos + Medir + Extrair</span><span class="node-type">Code Node + Execute Command (×2)</span></div>
+        <p class="node-desc">Um <b>Code Node</b> monta os paths em JavaScript puro (sem envolver o shell). Os dois <b>Execute Command</b> seguintes recebem <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">{{ $json.videoPath }}</code> entre aspas duplas, resolvido pelo n8n antes de chegar ao shell.</p>
+        <div class="node-code"><span class="code-comment">// ① Code Node — monta paths em JS puro (sem shell)</span>
+<span class="code-fn">const</span> name = $(<span class="code-str">'Google Drive Trigger'</span>).first().json.name;
+<span class="code-fn">const</span> id   = $(<span class="code-str">'Google Drive Trigger'</span>).first().json.id;
+<span class="code-fn">const</span> base = <span class="code-str">'/home/node/.n8n-files/'</span>;
+<span class="code-fn">return</span> [{ json: {
+  videoName: name,  videoId: id,
+  videoPath: base + name,
+  audioPath: base + <span class="code-str">'audio_'</span> + id + <span class="code-str">'.wav'</span>
+}}];
+
+<span class="code-comment">// ② Execute Command — ffprobe</span>
+<span class="code-fn">ffprobe</span> -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 <span class="code-str">"{{ $json.videoPath }}"</span>
+
+<span class="code-comment">// ③ Execute Command — ffmpeg extrai WAV</span>
+<span class="code-fn">ffmpeg</span> -y -i <span class="code-str">"{{ $json.videoPath }}"</span> -vn -ar 16000 -ac 1 -acodec pcm_s16le <span class="code-str">"{{ $json.audioPath }}"</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-whisper">🎙️</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Transcrever — OpenAI Whisper</span><span class="node-type">HTTP Request Node</span></div>
+        <p class="node-desc">Transcreve com timestamps por palavra (<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">verbose_json</code>). O retorno contém cada palavra com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">start/end</code> em segundos — base para o Claude e para as legendas.</p>
+        <div class="node-code"><span class="code-key">URL:</span> <span class="code-str">https://api.openai.com/v1/audio/transcriptions</span>
+<span class="code-key">model:</span> <span class="code-str">"whisper-1"</span>
+<span class="code-key">response_format:</span> <span class="code-str">"verbose_json"</span>
+<span class="code-key">timestamp_granularities[]:</span> <span class="code-str">"word"</span>
+<span class="code-key">language:</span> <span class="code-str">"pt"</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-claude">🤖</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Identificar Melhores Momentos — Claude</span><span class="node-type">HTTP Request Node → Anthropic API</span></div>
+        <p class="node-desc">Claude lê a transcrição completa e identifica semanticamente os melhores trechos para Shorts. Cada clipe retornado inclui <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">hook</code> e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">reason</code>. Os cortes nunca ocorrem no meio de uma frase.</p>
+        <div class="node-code"><span class="code-key">system:</span> <span class="code-str">"Você é um editor sênior de YouTube Shorts.
+Analise a transcrição e identifique os melhores momentos
+para virar Shorts de até 150s. Cada clipe deve ser:
+
+1. AUTOCONTIDO — entendível sem ver o resto do vídeo
+2. Com GANCHO nos primeiros 3s
+3. Com CONCLUSÃO clara no final
+4. Semanticamente coeso
+5. Início e fim sempre em PAUSA DE FALA
+
+Retorne APENAS JSON válido (sem markdown):
+[{
+  "start": 12.4,
+  "end": 98.7,
+  "title": "slug-curto-do-tema",
+  "hook": "Frase exata de abertura do clipe",
+  "reason": "Por que este trecho funciona como Short"
+}, ...]"</span>
+
+<span class="code-key">content:</span> <span class="code-str">"Duração total: {{ $('Medir Duração (ffprobe)').first().json.stdout }}s
+Transcrição completa com timestamps:
+{{ JSON.stringify($json.words) }}"</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-code">🗂️</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Processar Clipes + Gerar SRTs</span><span class="node-type">Code Node (JavaScript)</span></div>
+        <p class="node-desc">Parseia o JSON retornado pelo Claude, valida durações (75s–150s), e — <b>se legendas estiverem habilitadas</b> — gera o arquivo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> de cada clipe usando os timestamps do Whisper. Sempre salva um <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code> com hook + reason.</p>
+        <div class="node-code"><span class="code-comment">// Claude retorna ex:
+// [{ start: 45.2, end: 187.9, title: "erro-mais-comum",
+//    hook: "90% das pessoas erra isso",
+//    reason: "Afirmação forte + solução prática" }, ...]
+//
+// Code Node → gera por clipe:
+//   /home/node/.n8n-files/clip_01.srt   (se incluirLegendas=true)
+//   /home/node/.n8n-files/clip_01_meta.json
+//   → { hook, reason, duration, title }</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-code">✂️</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Cortar + 9:16 (+ Legendas, se habilitado)</span><span class="node-type">Execute Command Node (loop por clipe)</span></div>
+        <p class="node-desc">Recorta o trecho exato e converte para 1080×1920 (9:16) com pad. O filtro <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">subtitles=...</code> só é incluído quando <b>incluirLegendas = true</b>.</p>
+        <div class="node-code"><span class="code-fn">ffmpeg</span> -ss <span class="code-str">{{ clip.start }}</span> -to <span class="code-str">{{ clip.end }}</span> \
+  -i <span class="code-str">"/home/node/.n8n-files/{{ videoName }}"</span> \
+  -vf <span class="code-str">"scale=1080:1920:force_original_aspect_ratio=decrease,
+       pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black
+       [, subtitles=clip_{{ idx }}.srt:force_style='Fontsize=22,...']"</span> \
+  -c:v libx264 -preset fast -crf 22 \
+  -c:a aac -b:a 128k -movflags +faststart \
+  <span class="code-str">"/home/node/.n8n-files/short_{{ idx }}_{{ clip.title }}.mp4"</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-output">📤</div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Upload Short + Metadados → Google Drive</span><span class="node-type">Google Drive Node (loop)</span></div>
+        <p class="node-desc">Faz upload do vídeo Short e do arquivo de metadados JSON (com hook e reason do Claude) para a pasta do Drive.</p>
+        <div class="node-code"><span class="code-comment">// Upload 1: o vídeo Short</span>
+<span class="code-key">File:</span> <span class="code-str">short_{{ idx }}_{{ clip.title }}.mp4</span>
+
+<span class="code-comment">// Upload 2: metadados do clipe</span>
+<span class="code-key">File:</span> <span class="code-str">short_{{ idx }}_{{ clip.title }}_meta.json</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════ PIPELINE 2 ══════════════════ -->
+<div class="content" id="content-pipeline2">
+<div class="pipeline-section">
+  <div class="pipeline-header">
+    <div class="badge-mode simple">⚡ MODO SIMPLES — FFmpeg silencedetect + Whisper.cpp local</div>
+    <h2>Shorts via Silêncio de Áudio (sem APIs pagas)</h2>
+    <p>Detecta silêncios por volume (dB), agrupa segmentos de fala em janelas de 75s–150s, converte para 9:16 com crop centralizado, e — se habilitado — transcreve cada clipe com <b>whisper.cpp local</b> (modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-base</code>) para queimar a legenda. Custo de API: <b>$0</b>.</p>
+  </div>
+
+  <div class="info-box">
+    <strong>⚡ Diferença desta opção</strong>
+    Sem Claude para análise semântica — os clipes são formados por agrupamento sequencial de blocos de fala até atingir a janela de duração desejada. A legenda (quando habilitada) usa whisper.cpp rodando localmente na VPS, sem depender da API da OpenAI. Cada clipe é processado <b>um por vez</b> via <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Loop Over Items</code>, evitando sobrecarga de CPU.
+  </div>
+
+  <div class="pipeline">
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-trigger">🔔</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Google Drive Trigger</span><span class="node-type">Google Drive Trigger</span></div>
+        <p class="node-desc">Monitora a pasta configurada e dispara com os metadados do vídeo a cada novo arquivo.</p>
+        <div class="node-code"><span class="code-key">Event:</span> <span class="code-val">File Created</span>  |  <span class="code-key">Folder:</span> <span class="code-str">{{ config.gdriveFolderId }}</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-trigger">⬇️</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Baixar + Salvar na VPS</span><span class="node-type">Google Drive → Write Binary File</span></div>
+        <p class="node-desc">Salva em <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/home/node/.n8n-files/</code>.</p>
+        <div class="node-code"><span class="code-key">Write to:</span> <span class="code-str">/home/node/.n8n-files/{{ $json.name }}</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-code">🔧</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Paths: Vídeo + FFprobe + Detectar Silêncios</span><span class="node-type">Code Node + Execute Command</span></div>
+        <p class="node-desc">Um <b>Code Node</b> monta <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">videoPath</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">videoName</code>. O Execute Command seguinte mede a duração total (ffprobe) e detecta silêncios (ffmpeg silencedetect) em um único comando.</p>
+        <div class="node-code"><span class="code-comment">// Code Node — Paths: Vídeo</span>
+<span class="code-fn">const</span> t = $(<span class="code-str">'Google Drive Trigger'</span>).first().json;
+<span class="code-fn">const</span> base = <span class="code-str">'/home/node/.n8n-files/'</span>;
+<span class="code-fn">return</span> [{ json: { videoName: t.name, videoPath: base + t.name }}];
+
+<span class="code-comment">// Execute Command — FFprobe + Silêncios</span>
+DUR=$(<span class="code-fn">ffprobe</span> -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 <span class="code-str">"{{ $json.videoPath }}"</span>) \
+&& echo <span class="code-str">"DURATION:$DUR"</span> \
+&& <span class="code-fn">ffmpeg</span> -i <span class="code-str">"{{ $json.videoPath }}"</span> -af <span class="code-str">'silencedetect=noise=-30dB:d=0.4'</span> -f null - 2>&1 \
+   | grep -E <span class="code-str">"silence_start|silence_end"</span> || true</div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-code">🔧</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Montar Clipes (75s–150s)</span><span class="node-type">Code Node (JavaScript)</span></div>
+        <p class="node-desc">Parseia os silêncios, agrupa blocos de fala em clipes de 75s–150s, e monta os paths de cada clipe — incluindo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">audioPath</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">srtPath</code> quando legendas estão habilitadas. Retorna <b>1 item por clipe</b>.</p>
+        <div class="node-code"><span class="code-fn">const</span> idx = String(cl.length+1).padStart(<span class="code-val">2</span>,<span class="code-str">'0'</span>);
+<span class="code-fn">const</span> outPath   = <span class="code-str">'/home/node/.n8n-files/short_'</span>+idx+<span class="code-str">'.mp4'</span>;
+<span class="code-comment">// se incluirLegendas:</span>
+<span class="code-fn">const</span> audioPath = <span class="code-str">'/home/node/.n8n-files/clip_'</span>+idx+<span class="code-str">'.wav'</span>;
+<span class="code-fn">const</span> srtPath   = <span class="code-str">'/home/node/.n8n-files/clip_'</span>+idx+<span class="code-str">'.srt'</span>;
+cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srtPath });</div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-loop">🔁</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Loop Over Items (1 clipe por vez)</span><span class="node-type">Split In Batches (batchSize=1)</span></div>
+        <p class="node-desc">Garante que cada clipe seja processado (e enviado ao Drive) <b>individualmente, em sequência</b> — evita rodar vários ffmpeg/whisper em paralelo na VPS. Quando todos os clipes são processados, o output "done" finaliza o workflow.</p>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-whisper">🎙️</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">[Se incluirLegendas] Extrair Áudio + Whisper.cpp</span><span class="node-type">Execute Command (×2) + Code (pass-through)</span></div>
+        <p class="node-desc">Extrai apenas o trecho do clipe em WAV 16kHz mono, depois transcreve <b>localmente</b> com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">whisper</code> (whisper.cpp, modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-base.bin</code>), gerando o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code>. <b>Toda essa etapa é pulada se legendas estiverem desabilitadas.</b></p>
+        <div class="node-code"><span class="code-comment">// Extrair Áudio do Clipe</span>
+<span class="code-fn">ffmpeg</span> -y -ss <span class="code-str">"{{ $json.clipStart }}"</span> -to <span class="code-str">"{{ $json.clipEnd }}"</span> \
+  -i <span class="code-str">"{{ $json.videoPath }}"</span> -vn -acodec pcm_s16le -ar 16000 -ac 1 <span class="code-str">"{{ $json.audioPath }}"</span>
+
+<span class="code-comment">// Whisper.cpp Transcrever (sem API, sem custo)</span>
+<span class="code-fn">whisper</span> -m /models/ggml-base.bin -f <span class="code-str">"{{ $json.audioPath }}"</span> \
+  -l pt -osrt -of <span class="code-str">"{{ $json.srtBase }}"</span> -np</div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-ffmpeg">✂️</div><div class="node-connector"></div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">FFmpeg Cortar 9:16 (+ Legenda, se habilitado)</span><span class="node-type">Execute Command Node</span></div>
+        <p class="node-desc">Recorta o clipe do vídeo original, escala/recorta para 1080×1920 (9:16, crop centralizado sem barras pretas) e — se <b>incluirLegendas=true</b> — queima a legenda do <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> gerado pelo whisper.cpp.</p>
+        <div class="node-code"><span class="code-fn">ffmpeg</span> -y -ss <span class="code-str">"{{ $json.clipStart }}"</span> -to <span class="code-str">"{{ $json.clipEnd }}"</span> \
+  -i <span class="code-str">"{{ $json.videoPath }}"</span> \
+  -vf <span class="code-str">"scale=-2:1920,crop=1080:1920:(iw-1080)/2:(ih-1920)/2
+       [, subtitles={{ $json.srtPath }}:force_style='FontSize=14,...,MarginV=18']"</span> \
+  -c:v libx264 -preset fast -crf 22 \
+  -c:a aac -b:a 128k -movflags +faststart \
+  <span class="code-str">"{{ $json.outPath }}"</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="node-line"><div class="node-icon icon-output">📤</div></div>
+      <div class="node-body">
+        <div class="node-header"><span class="node-name">Ler do Disco + Upload → Drive → volta ao Loop</span><span class="node-type">Read Binary File + Google Drive</span></div>
+        <p class="node-desc">Lê o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">short_XX.mp4</code> gerado, envia para a pasta do Drive com nome <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">short_01.mp4</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">short_02.mp4</code>... e volta para o <b>Loop Over Items</b> até processar todos os clipes.</p>
+        <div class="node-code"><span class="code-key">Operation:</span> <span class="code-val">Upload</span>
+<span class="code-key">Name:</span> <span class="code-str">={{ 'short_' + $('Preparar Leitura').item.json.idx + '.mp4' }}</span>
+<span class="code-key">Parent Folder:</span> <span class="code-str">{{ config.gdriveFolderId }}</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════ CONFIG ══════════════════ -->
+<div class="content" id="content-config">
+<div class="config-grid">
+
+  <div class="config-card">
+    <h3>🔑 Credenciais</h3>
+    <div class="field">
+      <label>OpenAI API Key (apenas Opção 1)</label>
+      <input type="password" id="openai-key" placeholder="sk-..." oninput="updateCfg()">
+      <div class="field-hint">Transcrição Whisper na Opção 1 (semântico). A Opção 2 usa whisper.cpp local — sem custo.</div>
+    </div>
+    <div class="field">
+      <label>Anthropic API Key (Claude)</label>
+      <input type="password" id="anthropic-key" placeholder="sk-ant-..." oninput="updateCfg()">
+      <div class="field-hint">Apenas para Opção 1 (análise semântica dos clipes).</div>
+    </div>
+    <div class="field">
+      <label>Google Drive Folder ID</label>
+      <input type="text" id="gdrive-folder" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs" oninput="updateCfg()">
+      <div class="field-hint">Pasta de entrada (trigger) e saída (upload dos Shorts).</div>
+    </div>
+  </div>
+
+  <div class="config-card">
+    <h3>🎬 Duração dos Clipes</h3>
+    <div class="field">
+      <label>Duração mínima do clipe (segundos)</label>
+      <input type="number" id="min-clip" value="75" min="30" max="120" step="1" oninput="updateCfg();updateRange()">
+      <div class="field-hint">75s = 1 minuto e 15 segundos</div>
+    </div>
+    <div class="field">
+      <label>Duração máxima do clipe (segundos)</label>
+      <input type="number" id="max-clip" value="150" min="60" max="180" step="1" oninput="updateCfg();updateRange()">
+      <div class="field-hint">150s = 2 minutos e 30 segundos</div>
+    </div>
+    <div class="range-display" id="range-display">🎯 Alvo: 1m15s → 2m30s</div>
+  </div>
+
+  <div class="config-card">
+    <h3>🎙️ Detecção de Silêncio</h3>
+    <div class="field">
+      <label>Limiar de volume (dB)</label>
+      <input type="number" id="noise-db" value="-30" min="-50" max="-15" step="1" oninput="updateCfg()">
+      <div class="field-hint">-30dB é padrão. Ambientes ruidosos: -25dB. Mic profissional: -40dB.</div>
+    </div>
+    <div class="field">
+      <label>Pausa mínima para cortar (segundos)</label>
+      <input type="number" id="min-silence" value="0.4" min="0.2" max="2.0" step="0.1" oninput="updateCfg()">
+      <div class="field-hint">Pausas menores são ignoradas (respirações, etc).</div>
+    </div>
+    <div class="field">
+      <label>Margem de frames (segundos)</label>
+      <input type="number" id="margin" value="0.15" min="0.0" max="0.5" step="0.05" oninput="updateCfg()">
+    </div>
+    <div class="field">
+      <label>Idioma (Whisper / whisper.cpp)</label>
+      <select id="language" onchange="updateCfg()">
+        <option value="pt" selected>Português</option>
+        <option value="en">Inglês</option>
+        <option value="es">Espanhol</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="config-card">
+    <h3>🔤 Legendas</h3>
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">Incluir legendas queimadas</div>
+        <div class="toggle-hint">Opção 2: usa whisper.cpp local (sem API). Opção 1: usa o .srt gerado a partir do Whisper.</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="include-subtitles" checked oninput="updateCfg()">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="field">
+      <label>Tamanho da fonte da legenda</label>
+      <input type="number" id="font-size" value="14" min="10" max="40" step="1" oninput="updateCfg()">
+      <div class="field-hint">14px é discreto para mobile. 22px+ é mais chamativo.</div>
+    </div>
+    <div class="field">
+      <label>Margem inferior da legenda (px)</label>
+      <input type="number" id="margin-v" value="18" min="10" max="200" step="2" oninput="updateCfg()">
+      <div class="field-hint">Distância da legenda em relação à borda inferior.</div>
+    </div>
+    <div class="field-hint">Quando desativado, a Opção 2 pula completamente as etapas de extração de áudio e whisper.cpp — gera apenas o corte 9:16, mais rápido e sem uso de CPU extra.</div>
+  </div>
+
+  <div class="config-card">
+    <h3>📐 Formato Shorts (9:16)</h3>
+    <div class="field">
+      <label>Largura de saída (px)</label>
+      <input type="number" id="width" value="1080" min="720" max="1080" step="1" oninput="updateCfg()">
+    </div>
+    <div class="field">
+      <label>Altura de saída (px)</label>
+      <input type="number" id="height" value="1920" min="1280" max="1920" step="1" oninput="updateCfg()">
+    </div>
+
+    <div class="steps-list">
+      <div class="step">
+        <span class="step-num">📋</span>
+        <div class="step-content">
+          <strong>Como importar no n8n</strong>
+          <span>Download do JSON → n8n → ⋮ menu → Import from File → adicione as credenciais Google Drive (e OpenAI/Anthropic na Opção 1).</span>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">📁</span>
+        <div class="step-content">
+          <strong>Permissão de pasta na VPS</strong>
+          <span><code style="font-family:var(--mono);color:var(--accent2);font-size:11px">chmod 755 /home/node/.n8n-files</code> para que o n8n consiga escrever os arquivos temporários.</span>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-num">🎬</span>
+        <div class="step-content">
+          <strong>Teste</strong>
+          <span>Coloque um vídeo MP4 na pasta do Drive. Em até 1 minuto o workflow dispara e os Shorts aparecem na mesma pasta.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════ DOWNLOAD ══════════════════ -->
+<div class="content" id="content-download">
+<div class="download-section">
+  <div class="download-header">
+    <h2>Download dos Workflows</h2>
+    <p>JSONs prontos para importar no n8n. Cada clipe de 1m15s–2m30s vira um Short 9:16, com legenda queimada opcional, enviado automaticamente ao Google Drive.</p>
+  </div>
+
+  <div class="download-cards">
+    <div class="dl-card">
+      <div class="dl-card-header">
+        <div>
+          <h3>🧠 Opção 1 — Semântico</h3>
+          <p>Claude identifica semanticamente os melhores momentos — com gancho, conclusão clara e autocontido. Legendas via Whisper API (opcional).</p>
+        </div>
+        <div class="dl-card-icon">🤖</div>
+      </div>
+      <div class="dl-meta">
+        <span class="dl-tag">12 nodes</span>
+        <span class="dl-tag">Google Drive</span>
+        <span class="dl-tag">Claude semântico</span>
+        <span class="dl-tag hot">9:16 + Legendas opcionais</span>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="downloadWorkflow('semantic')">⬇️ Baixar workflow-shorts-semantic.json</button>
+    </div>
+    <div class="dl-card">
+      <div class="dl-card-header">
+        <div>
+          <h3>⚡ Opção 2 — Simples</h3>
+          <p>Agrupamento por silêncios de áudio + Loop Over Items (1 clipe por vez). Legendas via whisper.cpp local (opcional) — $0 de API.</p>
+        </div>
+        <div class="dl-card-icon">🎞️</div>
+      </div>
+      <div class="dl-meta">
+        <span class="dl-tag">FFmpeg + Whisper.cpp local</span>
+        <span class="dl-tag">Google Drive</span>
+        <span class="dl-tag">Loop por clipe</span>
+        <span class="dl-tag hot">9:16 + Legendas opcionais</span>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="downloadWorkflow('simple')">⬇️ Baixar workflow-shorts-simple.json</button>
+    </div>
+  </div>
+
+  <div class="json-preview">
+    <div class="json-preview-header">
+      <span id="preview-label">📄 preview: workflow-shorts-semantic.json</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="renderPreview('semantic')">Semântico</button>
+        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="renderPreview('simple')">Simples</button>
+      </div>
+    </div>
+    <pre id="json-preview-content">Carregando preview...</pre>
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast">✅ <span id="toast-msg">Download iniciado!</span></div>
+
+<script>
+const cfg = {
+  openaiKey:'', anthropicKey:'', gdriveFolder:'',
+  minClip:75, maxClip:150, noiseDb:-30, minSilence:0.4,
+  margin:0.15, language:'pt', width:1080, height:1920,
+  fontSize:14, marginV:18, includeSubtitles:true
+};
+
+function switchTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  document.getElementById('content-'+id).classList.add('active');
+  if(id==='download') renderPreview('semantic');
+}
+
+function updateCfg(){
+  cfg.openaiKey = document.getElementById('openai-key').value||'YOUR_OPENAI_KEY';
+  cfg.anthropicKey = document.getElementById('anthropic-key').value||'YOUR_ANTHROPIC_KEY';
+  cfg.gdriveFolder = document.getElementById('gdrive-folder').value||'YOUR_GDRIVE_FOLDER_ID';
+  cfg.minClip = parseInt(document.getElementById('min-clip').value)||75;
+  cfg.maxClip = parseInt(document.getElementById('max-clip').value)||150;
+  cfg.noiseDb = parseInt(document.getElementById('noise-db').value)||-30;
+  cfg.minSilence = parseFloat(document.getElementById('min-silence').value)||0.4;
+  cfg.margin = parseFloat(document.getElementById('margin').value)||0.15;
+  cfg.language = document.getElementById('language').value;
+  cfg.width = parseInt(document.getElementById('width').value)||1080;
+  cfg.height = parseInt(document.getElementById('height').value)||1920;
+  cfg.fontSize = parseInt(document.getElementById('font-size').value)||14;
+  cfg.marginV = parseInt(document.getElementById('margin-v').value)||18;
+  cfg.includeSubtitles = document.getElementById('include-subtitles').checked;
+}
+
+function updateRange(){
+  const mn=parseInt(document.getElementById('min-clip').value)||75;
+  const mx=parseInt(document.getElementById('max-clip').value)||150;
+  const fmt=s=>Math.floor(s/60)+'m'+(s%60>0?(s%60)+'s':'');
+  document.getElementById('range-display').textContent='🎯 Alvo: '+fmt(mn)+' → '+fmt(mx);
+}
+
+function buildSimpleWorkflow(){
+  const MIN=cfg.minClip, sub=cfg.includeSubtitles, mg=cfg.margin;
+  const style = `FontSize=${cfg.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Alignment=2,MarginV=${cfg.marginV}`;
+
+  const montarClipesCode = `const out = $json.stdout || '';
+const m   = out.match(/DURATION:([\\d.]+)/);
+const tot = m ? parseFloat(m[1]) : 600;
+const vp  = $('Paths: Vídeo').first().json.videoPath;
+const vn  = $('Paths: Vídeo').first().json.videoName;
+const MIN=${MIN}, mg=${mg};
+const ss = [...out.matchAll(/silence_start: ([\\d.]+)/g)].map(x=>+x[1]);
+const se = [...out.matchAll(/silence_end: ([\\d.]+)/g)].map(x=>+x[1]);
+const bl=[]; let p=0;
+ss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s}); p=se[i]||s+.5; });
+bl.push({s:p,e:tot});
+const cl=[]; let cs=bl[0]?.s||0, du=0;
+bl.forEach((b,i)=>{
+  du += b.e - b.s;
+  if (du >= MIN) {
+    const idx = String(cl.length+1).padStart(2,'0');
+    const outPath   = '/home/node/.n8n-files/short_'+idx+'.mp4';${sub ? `
+    const audioPath = '/home/node/.n8n-files/clip_'+idx+'.wav';
+    const srtBase   = '/home/node/.n8n-files/clip_'+idx;
+    const srtPath   = srtBase+'.srt';` : ''}
+    cl.push({
+      clipStart: Math.max(0, cs - mg),
+      clipEnd:   b.e + mg,
+      idx, videoPath: vp, videoName: vn, outPath${sub ? ', audioPath, srtBase, srtPath' : ''}
+    });
+    cs = bl[i+1]?.s || b.e;
+    du = 0;
+  }
+});
+return cl;`;
+
+  const nodes = [
+    {id:"n1",name:"Google Drive Trigger",type:"n8n-nodes-base.googleDriveTrigger",typeVersion:1,position:[200,300],
+     parameters:{pollTimes:{item:[{mode:"everyMinute"}]},triggerOn:"specificFolder",folderToWatch:{__rl:true,value:cfg.gdriveFolder,mode:"id"},event:"fileCreated"}},
+    {id:"n2",name:"Baixar Vídeo",type:"n8n-nodes-base.googleDrive",typeVersion:3,position:[380,300],
+     parameters:{operation:"download",fileId:{__rl:true,value:"={{ $json.id }}",mode:"id"}}},
+    {id:"n3",name:"Salvar na VPS",type:"n8n-nodes-base.writeBinaryFile",typeVersion:1,position:[560,300],
+     parameters:{fileName:"=/home/node/.n8n-files/{{ $('Google Drive Trigger').first().json.name }}",dataPropertyName:"data"}},
+    {id:"n4",name:"Paths: Vídeo",type:"n8n-nodes-base.code",typeVersion:2,position:[740,300],
+     parameters:{jsCode:"const t = $('Google Drive Trigger').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName: t.name,\n  videoPath: base + t.name\n}}];\n"}},
+    {id:"n5",name:"FFprobe + Silêncios",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[920,300],
+     parameters:{command:`=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{{ $json.videoPath }}") && echo "DURATION:$DUR" && ffmpeg -i "{{ $json.videoPath }}" -af 'silencedetect=noise=${cfg.noiseDb}dB:d=${cfg.minSilence}' -f null - 2>&1 | grep -E "silence_start|silence_end" || true`}},
+    {id:"n6",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1100,300],
+     parameters:{jsCode: montarClipesCode}},
+    {id:"n6a",name:"Loop Over Items",type:"n8n-nodes-base.splitInBatches",typeVersion:3,position:[1280,300],
+     parameters:{batchSize:1,options:{}}}
+  ];
+
+  if (sub) {
+    nodes.push(
+      {id:"n6b",name:"Extrair Áudio do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1500,440],
+       parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -to "{{ $json.clipEnd }}" -i "{{ $json.videoPath }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
+      {id:"n6c",name:"Preparar Whisper",type:"n8n-nodes-base.code",typeVersion:2,position:[1680,440],
+       parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
+      {id:"n6d",name:"Whisper.cpp Transcrever",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1860,440],
+       parameters:{command:`=whisper -m /models/ggml-base.bin -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np`}},
+      {id:"n6e",name:"Preparar Corte Final",type:"n8n-nodes-base.code",typeVersion:2,position:[2040,440],
+       parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}}
+    );
+  }
+
+  const vf = sub
+    ? `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2,subtitles={{ $json.srtPath }}:force_style='${style}'`
+    : `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
+  const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
+
+  nodes.push({id:"n7",name:cutNodeName,type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2220,440],
+    parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -to "{{ $json.clipEnd }}" -i "{{ $json.videoPath }}" -vf "${vf}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart "{{ $json.outPath }}"`}});
+
+  nodes.push(
+    {id:"n7b",name:"Preparar Leitura",type:"n8n-nodes-base.code",typeVersion:2,position:[2400,440],
+     parameters:{jsCode:"const clip = $('Loop Over Items').item.json;\nreturn [{ json: {\n  outPath:   clip.outPath,\n  idx:       clip.idx,\n  videoName: clip.videoName\n}}];\n"}},
+    {id:"n8",name:"Ler Short do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[2580,440],
+     parameters:{filePath:"={{ $json.outPath }}",dataPropertyName:"data"}},
+    {id:"n9",name:"Upload → Drive",type:"n8n-nodes-base.googleDrive",typeVersion:3,position:[2760,440],
+     parameters:{operation:"upload",name:"={{ 'short_' + $('Preparar Leitura').item.json.idx + '.mp4' }}",parents:[cfg.gdriveFolder],inputDataFieldName:"data"}}
+  );
+
+  const firstLoopNode = sub ? "Extrair Áudio do Clipe" : cutNodeName;
+  const connections = {
+    "Google Drive Trigger":{main:[[{node:"Baixar Vídeo",type:"main",index:0}]]},
+    "Baixar Vídeo":{main:[[{node:"Salvar na VPS",type:"main",index:0}]]},
+    "Salvar na VPS":{main:[[{node:"Paths: Vídeo",type:"main",index:0}]]},
+    "Paths: Vídeo":{main:[[{node:"FFprobe + Silêncios",type:"main",index:0}]]},
+    "FFprobe + Silêncios":{main:[[{node:"Montar Clipes",type:"main",index:0}]]},
+    "Montar Clipes":{main:[[{node:"Loop Over Items",type:"main",index:0}]]},
+    "Loop Over Items":{main:[[], [{node:firstLoopNode,type:"main",index:0}]]}
+  };
+  if (sub) {
+    connections["Extrair Áudio do Clipe"] = {main:[[{node:"Preparar Whisper",type:"main",index:0}]]};
+    connections["Preparar Whisper"] = {main:[[{node:"Whisper.cpp Transcrever",type:"main",index:0}]]};
+    connections["Whisper.cpp Transcrever"] = {main:[[{node:"Preparar Corte Final",type:"main",index:0}]]};
+    connections["Preparar Corte Final"] = {main:[[{node:cutNodeName,type:"main",index:0}]]};
+  }
+  connections[cutNodeName] = {main:[[{node:"Preparar Leitura",type:"main",index:0}]]};
+  connections["Preparar Leitura"] = {main:[[{node:"Ler Short do Disco",type:"main",index:0}]]};
+  connections["Ler Short do Disco"] = {main:[[{node:"Upload → Drive",type:"main",index:0}]]};
+  connections["Upload → Drive"] = {main:[[{node:"Loop Over Items",type:"main",index:0}]]};
+
+  return {
+    name: sub
+      ? "YouTube Shorts Generator — Simples (FFmpeg + Whisper.cpp local, loop por clipe)"
+      : "YouTube Shorts Generator — Simples (FFmpeg only, loop por clipe)",
+    nodes, connections,
+    settings:{executionOrder:"v1"},
+    meta:{version:"v17-loop", gdriveFolder: cfg.gdriveFolder, includeSubtitles: sub}
+  };
+}
+
+function buildSemanticWorkflow(){
+  const MIN=cfg.minClip, MAX=cfg.maxClip, sub=cfg.includeSubtitles;
+  const subtitleStyle = `Fontsize=${cfg.fontSize},Bold=1,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2,Alignment=2,MarginV=${cfg.marginV}`;
+  const vf = sub
+    ? `scale=${cfg.width}:${cfg.height}:force_original_aspect_ratio=decrease,pad=${cfg.width}:${cfg.height}:(ow-iw)/2:(oh-ih)/2:black,subtitles={{ $json.srtPath }}:force_style='${subtitleStyle}'`
+    : `scale=${cfg.width}:${cfg.height}:force_original_aspect_ratio=decrease,pad=${cfg.width}:${cfg.height}:(ow-iw)/2:(oh-ih)/2:black`;
+  const n9command = sub
+    ? "printf '%s' '{{ $json.srtContent }}' > {{ $json.srtPath }} && printf '%s' '{{ $json.metaContent }}' > {{ $json.metaPath }}"
+    : "printf '%s' '{{ $json.metaContent }}' > {{ $json.metaPath }}";
+
+  return {
+    name:"YouTube Shorts Generator — Semântico (Whisper + Claude + FFmpeg)",
+    nodes:[
+      {id:"n1",name:"Google Drive Trigger",type:"n8n-nodes-base.googleDriveTrigger",
+       typeVersion:1,position:[200,300],
+       parameters:{pollTimes:{item:[{mode:"everyMinute"}]},triggerOn:"specificFolder",
+         folderToWatch:{__rl:true,value:cfg.gdriveFolder,mode:"id"},event:"fileCreated"}},
+      {id:"n2",name:"Baixar Vídeo (Drive)",type:"n8n-nodes-base.googleDrive",
+       typeVersion:3,position:[380,300],
+       parameters:{operation:"download",fileId:{__rl:true,value:"={{ $json.id }}",mode:"id"}}},
+      {id:"n3",name:"Salvar na VPS",type:"n8n-nodes-base.writeBinaryFile",
+       typeVersion:1,position:[560,300],
+       parameters:{fileName:"=/home/node/.n8n-files/{{ $('Google Drive Trigger').first().json.name }}",dataPropertyName:"data"}},
+      {id:"n4",name:"Preparar Caminhos",type:"n8n-nodes-base.code",
+       typeVersion:2,position:[680,300],
+       parameters:{jsCode:`
+const trigger = $('Google Drive Trigger').first().json;
+const videoName = trigger.name;
+const videoId   = trigger.id || 'tmp';
+const base      = '/home/node/.n8n-files/';
+return [{json:{
+  videoName,
+  videoId,
+  videoPath: base + videoName,
+  audioPath: base + 'audio_' + videoId + '.wav'
+}}];
+`}},
+      {id:"n5",name:"Medir Duração (ffprobe)",type:"n8n-nodes-base.executeCommand",
+       typeVersion:1,position:[840,300],
+       parameters:{command:'=ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{{ $json.videoPath }}"'}},
+      {id:"n5b",name:"Extrair Áudio (FFmpeg)",type:"n8n-nodes-base.executeCommand",
+       typeVersion:1,position:[960,300],
+       parameters:{command:'=ffmpeg -y -i "{{ $json.videoPath }}" -vn -ar 16000 -ac 1 -acodec pcm_s16le "{{ $json.audioPath }}"'}},
+      {id:"n6",name:"Transcrever Whisper",type:"n8n-nodes-base.httpRequest",
+       typeVersion:4,position:[1100,300],
+       parameters:{method:"POST",url:"https://api.openai.com/v1/audio/transcriptions",
+         sendHeaders:true,
+         headerParameters:{parameters:[{name:"Authorization",value:`Bearer ${cfg.openaiKey}`}]},
+         sendBody:true,contentType:"multipart-form-data",
+         bodyParameters:{parameters:[
+           {name:"model",value:"whisper-1"},
+           {name:"response_format",value:"verbose_json"},
+           {name:"timestamp_granularities[]",value:"word"},
+           {name:"language",value:cfg.language}]}}},
+      {id:"n7",name:"Claude — Gerar Clipes",type:"n8n-nodes-base.httpRequest",
+       typeVersion:4,position:[1280,300],
+       parameters:{method:"POST",url:"https://api.anthropic.com/v1/messages",
+         sendHeaders:true,
+         headerParameters:{parameters:[
+           {name:"x-api-key",value:cfg.anthropicKey},
+           {name:"anthropic-version",value:"2023-06-01"},
+           {name:"content-type",value:"application/json"}]},
+         sendBody:true,bodyContentType:"json",
+         jsonBody:JSON.stringify({
+           model:"claude-sonnet-4-6",max_tokens:2000,
+           system:`Você é um editor sênior de YouTube Shorts. Analise a transcrição completa e identifique os MELHORES momentos para virar Shorts de até ${MAX}s (mínimo ${MIN}s). Para cada clipe identifique: 1) AUTOCONTIDO. 2) GANCHO nos primeiros 3s. 3) CONCLUSÃO clara. 4) Semanticamente coeso. 5) Início e fim SEMPRE em pausa de fala. Retorne APENAS JSON válido sem markdown: [{"start":12.4,"end":98.7,"title":"slug-do-tema","hook":"Frase exata de abertura","reason":"Por que funciona como Short"}]. Sem texto adicional.`,
+           messages:[{role:"user",content:`Duração total do vídeo: {{ $('Medir Duração (ffprobe)').first().json.stdout }}s\n\nTranscrição com timestamps:\n{{ JSON.stringify($json.words) }}`}]})}},
+      {id:"n8",name:"Processar e Cortar Clipes",type:"n8n-nodes-base.code",
+       typeVersion:2,position:[1460,300],
+       parameters:{jsCode:`
+const claudeRaw = $json.content[0].text.trim().replace(/\`\`\`json|\`\`\`/g,'').replace(/^[^[]*(\[)/,'$1');
+const clips = JSON.parse(claudeRaw);
+const videoName = $('Google Drive Trigger').first().json.name;
+const MIN_DUR = ${MIN}, MAX_DUR = ${MAX};
+const INCLUDE_SUBS = ${sub};
+const results = [];
+for (let i = 0; i < clips.length; i++) {
+  const clip = clips[i];
+  const dur = clip.end - clip.start;
+  if (dur < MIN_DUR - 5 || dur > MAX_DUR + 10) continue;
+  const idx = String(i+1).padStart(2,'0');
+  const titleSlug = (clip.title||'clip').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);
+  const srtPath = \`/home/node/.n8n-files/clip_\${idx}.srt\`;
+  const metaPath = \`/home/node/.n8n-files/clip_\${idx}_meta.json\`;
+  const outPath = \`/home/node/.n8n-files/short_\${idx}_\${titleSlug}.mp4\`;
+  let srt = '';
+  if (INCLUDE_SUBS) {
+    const words = $('Transcrever Whisper').first().json.words || [];
+    const clipWords = words.filter(w => w.start >= clip.start - 0.5 && w.end <= clip.end + 0.5);
+    const ts = (s) => {
+      const t = Math.max(0, s - clip.start);
+      const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), sc=Math.floor(t%60), ms=Math.round((t%1)*1000);
+      return \`\${String(h).padStart(2,'0')}:\${String(m).padStart(2,'0')}:\${String(sc).padStart(2,'0')},\${String(ms).padStart(3,'0')}\`;
+    };
+    let lineIdx = 1;
+    for (let w = 0; w < clipWords.length; w += 6) {
+      const group = clipWords.slice(w, w+6);
+      if (!group.length) continue;
+      srt += \`\${lineIdx}\\n\${ts(group[0].start)} --> \${ts(group[group.length-1].end)}\\n\${group.map(x=>x.word).join(' ')}\\n\\n\`;
+      lineIdx++;
+    }
+  }
+  const durSec = Math.round(dur);
+  const meta = JSON.stringify({
+    index: i+1, title: clip.title, slug: titleSlug,
+    hook: clip.hook || '', reason: clip.reason || '',
+    start: clip.start, end: clip.end,
+    duration: Math.floor(durSec/60)+'m'+(durSec%60)+'s',
+    videoSource: videoName
+  }, null, 2);
+  results.push({
+    clipStart: clip.start, clipEnd: clip.end,
+    srtContent: srt, metaContent: meta,
+    srtPath, metaPath, outPath,
+    videoName, titleSlug, idx,
+    hook: clip.hook || '', reason: clip.reason || ''
+  });
+}
+return results;`}},
+      {id:"n9",name:"Salvar SRT + Metadados",type:"n8n-nodes-base.executeCommand",
+       typeVersion:1,position:[1640,300],
+       parameters:{command:n9command}},
+      {id:"n10",name:"Cortar + 9:16 + Legendas",type:"n8n-nodes-base.executeCommand",
+       typeVersion:1,position:[1820,300],
+       parameters:{command:`=ffmpeg -ss {{ $json.clipStart }} -to {{ $json.clipEnd }} -i "/home/node/.n8n-files/{{ $json.videoName }}" -vf "${vf}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart "{{ $json.outPath }}"`}},
+      {id:"n11",name:"Upload Short → Drive",type:"n8n-nodes-base.googleDrive",
+       typeVersion:3,position:[2000,300],
+       parameters:{operation:"upload",
+         name:"={{ 'short_' + $json.idx + '_' + $json.titleSlug + '.mp4' }}",
+         parents:[cfg.gdriveFolder],inputDataFieldName:"data"}},
+      {id:"n12",name:"Upload Metadados → Drive",type:"n8n-nodes-base.googleDrive",
+       typeVersion:3,position:[2000,500],
+       parameters:{operation:"upload",
+         name:"={{ 'short_' + $json.idx + '_' + $json.titleSlug + '_meta.json' }}",
+         parents:[cfg.gdriveFolder],inputDataFieldName:"data"}}
+    ],
+    connections:{
+      "Google Drive Trigger":{main:[[{node:"Baixar Vídeo (Drive)",type:"main",index:0}]]},
+      "Baixar Vídeo (Drive)":{main:[[{node:"Salvar na VPS",type:"main",index:0}]]},
+      "Salvar na VPS":{main:[[{node:"Preparar Caminhos",type:"main",index:0}]]},
+      "Preparar Caminhos":{main:[[{node:"Medir Duração (ffprobe)",type:"main",index:0}]]},
+      "Medir Duração (ffprobe)":{main:[[{node:"Extrair Áudio (FFmpeg)",type:"main",index:0}]]},
+      "Extrair Áudio (FFmpeg)":{main:[[{node:"Transcrever Whisper",type:"main",index:0}]]},
+      "Transcrever Whisper":{main:[[{node:"Claude — Gerar Clipes",type:"main",index:0}]]},
+      "Claude — Gerar Clipes":{main:[[{node:"Processar e Cortar Clipes",type:"main",index:0}]]},
+      "Processar e Cortar Clipes":{main:[[{node:"Salvar SRT + Metadados",type:"main",index:0}]]},
+      "Salvar SRT + Metadados":{main:[[{node:"Cortar + 9:16 + Legendas",type:"main",index:0}]]},
+      "Cortar + 9:16 + Legendas":{main:[[{node:"Upload Short → Drive",type:"main",index:0}],[{node:"Upload Metadados → Drive",type:"main",index:0}]]}
+    },
+    settings:{executionOrder:"v1"},
+    meta:{
+      description:"Gera YouTube Shorts (9:16) com legendas opcionais a partir de vídeos no Google Drive",
+      config:{minClip:MIN,maxClip:MAX,resolution:`${cfg.width}x${cfg.height}`,noiseDb:cfg.noiseDb,language:cfg.language,includeSubtitles:sub}
+    }
+  };
+}
+
+function renderPreview(type){
+  updateCfg();
+  const wf = type==='semantic' ? buildSemanticWorkflow() : buildSimpleWorkflow();
+  document.getElementById('preview-label').textContent =
+    `📄 preview: workflow-shorts-${type}.json`;
+  document.getElementById('json-preview-content').textContent = JSON.stringify(wf,null,2);
+}
+
+function downloadWorkflow(type){
+  updateCfg();
+  const wf = type==='semantic' ? buildSemanticWorkflow() : buildSimpleWorkflow();
+  const blob = new Blob([JSON.stringify(wf,null,2)],{type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=`workflow-shorts-${type}.json`; a.click();
+  URL.revokeObjectURL(url);
+  showToast(`workflow-shorts-${type}.json baixado!`);
+}
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+updateCfg(); updateRange();
+setTimeout(()=>renderPreview('semantic'),100);
+</script>
+</body>
+</html>

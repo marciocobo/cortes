@@ -1,0 +1,401 @@
+{
+  "name": "YouTube Shorts Generator — Simples (FFmpeg + Whisper.cpp local, loop por clipe)",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl",
+          "mode": "id"
+        },
+        "event": "fileCreated"
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Baixar Vídeo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        380,
+        300
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Salvar na VPS",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ],
+      "parameters": {
+        "fileName": "=/home/node/.n8n-files/{{ $('Google Drive Trigger').first().json.name }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Paths: Vídeo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const t = $('Google Drive Trigger').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName: t.name,\n  videoPath: base + t.name\n}}];\n"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "FFprobe + Silêncios",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "command": "=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{{ $json.videoPath }}\") && echo \"DURATION:$DUR\" && ffmpeg -i \"{{ $json.videoPath }}\" -af 'silencedetect=noise=-30dB:d=0.4' -f null - 2>&1 | grep -E \"silence_start|silence_end\" || true"
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Montar Clipes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const out = $json.stdout || '';\nconst m   = out.match(/DURATION:([\\d.]+)/);\nconst tot = m ? parseFloat(m[1]) : 600;\nconst vp  = $('Paths: Vídeo').first().json.videoPath;\nconst vn  = $('Paths: Vídeo').first().json.videoName;\nconst MIN=75, MAX=150, mg=0.15;\nconst ss = [...out.matchAll(/silence_start: ([\\d.]+)/g)].map(x=>+x[1]);\nconst se = [...out.matchAll(/silence_end: ([\\d.]+)/g)].map(x=>+x[1]);\nconst bl=[]; let p=0;\nss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s}); p=se[i]||s+.5; });\nbl.push({s:p,e:tot});\nconst cl=[]; let cs=bl[0]?.s||0, du=0;\nbl.forEach((b,i)=>{\n  du += b.e - b.s;\n  if (du >= MIN) {\n    const idx = String(cl.length+1).padStart(2,'0');\n    const outPath   = '/home/node/.n8n-files/short_'+idx+'.mp4';\n    const audioPath = '/home/node/.n8n-files/clip_'+idx+'.wav';\n    const srtBase   = '/home/node/.n8n-files/clip_'+idx;\n    const srtPath   = srtBase+'.srt';\n    cl.push({\n      clipStart: Math.max(0, cs - mg),\n      clipEnd:   b.e + mg,\n      idx,\n      videoPath: vp,\n      videoName: vn,\n      outPath,\n      audioPath,\n      srtBase,\n      srtPath\n    });\n    cs = bl[i+1]?.s || b.e;\n    du = 0;\n  }\n});\nreturn cl;\n"
+      }
+    },
+    {
+      "id": "n6a",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1280,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "n6b",
+      "name": "Extrair Áudio do Clipe",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        440
+      ],
+      "parameters": {
+        "command": "=ffmpeg -y -ss \"{{ $json.clipStart }}\" -to \"{{ $json.clipEnd }}\" -i \"{{ $json.videoPath }}\" -vn -acodec pcm_s16le -ar 16000 -ac 1 \"{{ $json.audioPath }}\""
+      }
+    },
+    {
+      "id": "n6c",
+      "name": "Preparar Whisper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
+      }
+    },
+    {
+      "id": "n6d",
+      "name": "Whisper.cpp Transcrever",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        440
+      ],
+      "parameters": {
+        "command": "=whisper -m /models/ggml-base.bin -f \"{{ $json.audioPath }}\" -l pt -osrt -of \"{{ $json.srtBase }}\" -np"
+      }
+    },
+    {
+      "id": "n6e",
+      "name": "Preparar Corte Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "FFmpeg Cortar 9:16 + Legenda",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        440
+      ],
+      "parameters": {
+        "command": "=ffmpeg -y -ss \"{{ $json.clipStart }}\" -to \"{{ $json.clipEnd }}\" -i \"{{ $json.videoPath }}\" -vf \"scale=-2:1920,crop=1080:1920:(iw-1080)/2:(ih-1920)/2,subtitles={{ $json.srtPath }}:force_style='FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Alignment=2,MarginV=18'\" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart \"{{ $json.outPath }}\""
+      }
+    },
+    {
+      "id": "n7b",
+      "name": "Preparar Leitura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const clip = $('Loop Over Items').item.json;\nreturn [{ json: {\n  outPath:   clip.outPath,\n  idx:       clip.idx,\n  videoName: clip.videoName\n}}];\n"
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Ler Short do Disco",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2580,
+        440
+      ],
+      "parameters": {
+        "filePath": "={{ $json.outPath }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Upload → Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2760,
+        440
+      ],
+      "parameters": {
+        "operation": "upload",
+        "name": "={{ 'short_' + $('Preparar Leitura').item.json.idx + '.mp4' }}",
+        "parents": [
+          "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
+        ],
+        "inputDataFieldName": "data"
+      }
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Baixar Vídeo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar Vídeo": {
+      "main": [
+        [
+          {
+            "node": "Salvar na VPS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar na VPS": {
+      "main": [
+        [
+          {
+            "node": "Paths: Vídeo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paths: Vídeo": {
+      "main": [
+        [
+          {
+            "node": "FFprobe + Silêncios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFprobe + Silêncios": {
+      "main": [
+        [
+          {
+            "node": "Montar Clipes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Clipes": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Extrair Áudio do Clipe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Áudio do Clipe": {
+      "main": [
+        [
+          {
+            "node": "Preparar Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Whisper": {
+      "main": [
+        [
+          {
+            "node": "Whisper.cpp Transcrever",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper.cpp Transcrever": {
+      "main": [
+        [
+          {
+            "node": "Preparar Corte Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Corte Final": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg Cortar 9:16 + Legenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg Cortar 9:16 + Legenda": {
+      "main": [
+        [
+          {
+            "node": "Preparar Leitura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Leitura": {
+      "main": [
+        [
+          {
+            "node": "Ler Short do Disco",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Short do Disco": {
+      "main": [
+        [
+          {
+            "node": "Upload → Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload → Drive": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "version": "v17-loop",
+    "gdriveFolder": "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
+  }
+}

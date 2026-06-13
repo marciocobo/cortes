@@ -301,7 +301,8 @@ docker exec n8n ffprobe -version
 | Arquivo | Conteúdo |
 |---|---|
 | `workflow-shorts-semantic.json` | Opção 1 — v12, Whisper + Claude + FFmpeg, 11 nodes |
-| `workflow-shorts-simple.json` | Opção 2 — v15, FFmpeg only, 10 nodes, $0 API |
+| `workflow-shorts-simple.json` | Opção 2 — v16, FFmpeg + Whisper.cpp local, 14 nodes, $0 API |
+| `workflow-shorts-simple-loop.json` | Opção 2 — v17-loop, igual ao v16 mas processa cada clipe sequencialmente via `Loop Over Items`, garantindo múltiplos Shorts por execução, 16 nodes |
 | `n8n-video-silence-cutter.html` | App web para visualizar os pipelines e baixar os JSONs |
 | `n8n-shorts-generator-contexto.md` | Este arquivo |
 
@@ -323,6 +324,7 @@ docker exec n8n ffprobe -version
 | v14 | Adicionado Read Binary File antes do Upload (FFmpeg não gera binário no n8n) |
 | v15 | Crop centralizado (`scale=-2:1920 + crop`) — vídeo preenche frame todo sem barras; nome do arquivo simplificado para `short_01.mp4` |
 | v16 | Adicionada legenda na Opção 2 via **whisper.cpp local** (modelo `base`, sem API): extrai áudio do clipe, transcreve com whisper-cli, queima `.srt` com `subtitles` + `force_style` no corte 9:16 |
+| v17-loop | Novo arquivo `workflow-shorts-simple-loop.json`: insere `Loop Over Items` (Split In Batches, batchSize=1) após `Montar Clipes`, processando cada clipe sequencialmente (áudio → whisper → corte+legenda → upload) e voltando ao loop até processar todos os clipes |
 
 ---
 
