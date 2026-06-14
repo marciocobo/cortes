@@ -147,7 +147,7 @@
   <div class="pipeline-header">
     <div class="badge-mode shorts">🎬 SHORTS GENERATOR — Claude + Whisper.cpp local + FFmpeg</div>
     <h2>Identificação Semântica de até 4 Melhores Momentos</h2>
-    <p>O vídeo inteiro é transcrito <b>localmente com whisper.cpp</b> (sem OpenAI). O Claude lê essa transcrição completa (em SRT, com timestamps) e decide <em>quais até 4 trechos</em> fazem sentido como Shorts — não apenas por duração, mas por coesão de ideia, gancho de abertura e conclusão clara. Cada Short gerado vem com um arquivo de metadados JSON com o hook e o motivo da escolha. Único custo de API: <b>Anthropic Claude</b>.</p>
+    <p>O vídeo inteiro é transcrito <b>localmente com whisper.cpp</b> (sem OpenAI). Um motor de IA configurável (Claude, Ollama local ou nenhum) lê essa transcrição completa (em SRT, com timestamps) e decide <em>quais até 4 trechos</em> fazem sentido como Shorts — não apenas por duração, mas por coesão de ideia, gancho de abertura e conclusão clara. Cada Short gerado vem com um arquivo de metadados JSON com o hook e o motivo da escolha. Único custo de API possível: <b>Anthropic Claude</b> (opcional — pode ser substituído por Ollama local, $0).</p>
   </div>
 
   <div class="info-box">
@@ -156,8 +156,16 @@
   </div>
 
   <div class="info-box">
-    <strong>🔁 Toggle "usar Claude" (aba ⚙️ Configurar)</strong>
-    Com o toggle <b>ativado</b> (padrão), o fluxo acima é gerado: whisper.cpp transcreve o vídeo inteiro e o Claude escolhe até 4 clipes. Com o toggle <b>desativado</b>, os nodes de transcrição completa e a chamada à Anthropic (<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Whisper Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Whisper.cpp Transcrever Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Claude</code> e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude — Gerar Clipes</code>) são removidos do workflow. Em vez disso, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Caminhos</code> segue direto para um node <b>FFprobe + Silêncios</b> (igual à Opção 2), e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Montar Clipes</code> agrupa os trechos por <b>detecção de silêncio</b> em vez de usar a escolha do Claude — gerando clipes com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">hook</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">reason</code> vazios no <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code>. As legendas por clipe (whisper.cpp local) e o upload de Short + metadados continuam funcionando normalmente. Zero custo de API neste modo.
+    <strong>🔁 Motor de escolha dos clipes (aba ⚙️ Configurar)</strong>
+    Um seletor na aba Configurar define como <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Montar Clipes</code> escolhe os trechos:
+    <br><br>
+    <b>• Claude</b> (padrão) — o fluxo acima é gerado na íntegra: whisper.cpp transcreve o vídeo inteiro e o Claude (Anthropic) escolhe até <b>4 clipes</b> com hook/reason.
+    <br><br>
+    <b>• Ollama (local)</b> — mesma transcrição completa via whisper.cpp, mas a etapa <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude — Gerar Clipes</code> é substituída por <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Ollama — Gerar Clipes</code> (HTTP POST para <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">http://172.20.0.1:11434/api/generate</code>, body <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">{"model":"llama3.1:8b","prompt":"...","stream":false}</code>), usando o mesmo prompt e retornando hook/reason — mas com até <b>5 clipes</b>. Zero custo de API.
+    <br><br>
+    <b>• Nenhum</b> — os nodes de transcrição completa e a chamada de IA (<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Whisper Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Whisper.cpp Transcrever Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Claude/Ollama</code> e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude/Ollama — Gerar Clipes</code>) são removidos. <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Caminhos</code> segue direto para <b>FFprobe + Silêncios</b> (igual à Opção 2), e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Montar Clipes</code> agrupa por <b>detecção de silêncio</b>, gerando <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">hook</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">reason</code> vazios no <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code>.
+    <br><br>
+    Em todos os modos, as legendas por clipe (whisper.cpp local) e o upload de Short + metadados continuam funcionando normalmente.
   </div>
 
   <div class="pipeline">
@@ -446,20 +454,29 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
 
   <div class="config-card">
     <h3>🔑 Credenciais</h3>
-    <div class="toggle-row">
-      <div>
-        <div class="toggle-label">Opção 1: usar Claude para escolher os melhores momentos</div>
-        <div class="toggle-hint">Quando desativado, a Opção 1 não chama a API da Anthropic: os clipes passam a ser formados por detecção de silêncio (igual à Opção 2), mantendo o whisper.cpp local e o upload de <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code> (com hook/reason vazios).</div>
-      </div>
-      <label class="switch">
-        <input type="checkbox" id="use-claude" checked oninput="updateCfg()">
-        <span class="slider"></span>
-      </label>
-    </div>
     <div class="field">
+      <label>Opção 1: motor de escolha dos melhores momentos</label>
+      <select id="ai-engine" onchange="updateCfg()">
+        <option value="claude" selected>Claude (Anthropic — pago)</option>
+        <option value="ollama">Ollama (modelo local — grátis)</option>
+        <option value="none">Nenhum — agrupar por silêncio (igual Opção 2)</option>
+      </select>
+      <div class="field-hint">Define como a Opção 1 escolhe até 4 clipes. "Ollama" usa um modelo local na própria VPS (ex: llama3.1:8b) com o mesmo prompt do Claude. "Nenhum" cai no agrupamento por detecção de silêncio, mantendo whisper.cpp local e upload de <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code> (com hook/reason vazios).</div>
+    </div>
+    <div class="field" id="anthropic-key-field">
       <label>Anthropic API Key (Claude)</label>
       <input type="password" id="anthropic-key" placeholder="sk-ant-..." oninput="updateCfg()">
-      <div class="field-hint">Necessário apenas se a opção acima estiver ativada. Transcrição em ambas as opções usa whisper.cpp local — sem custo de API.</div>
+      <div class="field-hint">Necessário apenas se o motor acima for "Claude". Transcrição em todas as opções usa whisper.cpp local — sem custo de API.</div>
+    </div>
+    <div class="field" id="ollama-url-field" style="display:none">
+      <label>Ollama URL (endpoint da API)</label>
+      <input type="text" id="ollama-url" placeholder="http://172.20.0.1:11434/api/generate" value="http://172.20.0.1:11434/api/generate" oninput="updateCfg()">
+      <div class="field-hint">Endpoint completo (com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/api/generate</code>) do Ollama na VPS. <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">172.20.0.1</code> é o IP do host Docker visto de dentro de um container — ajuste conforme sua rede.</div>
+    </div>
+    <div class="field" id="ollama-model-field" style="display:none">
+      <label>Ollama — modelo</label>
+      <input type="text" id="ollama-model" placeholder="llama3.1:8b" value="llama3.1:8b" oninput="updateCfg()">
+      <div class="field-hint">Modelo já baixado na VPS via <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ollama pull</code>.</div>
     </div>
     <div class="field">
       <label>Google Drive Folder ID</label>
@@ -586,7 +603,7 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
       <div class="dl-card-header">
         <div>
           <h3>🧠 Opção 1 — Semântico</h3>
-          <p>Whisper.cpp local transcreve o vídeo inteiro; Claude identifica até 4 dos melhores momentos — com gancho, conclusão clara e autocontido. Legendas via whisper.cpp local (opcional). Sem OpenAI. Toggle "usar Claude" (aba ⚙️ Configurar) permite desativar a chamada à Anthropic, caindo no agrupamento por silêncio (igual à Opção 2).</p>
+          <p>Whisper.cpp local transcreve o vídeo inteiro; um motor de IA configurável (Claude, Ollama local ou nenhum — aba ⚙️ Configurar) identifica até 4 dos melhores momentos, com gancho, conclusão clara e autocontido. Legendas via whisper.cpp local (opcional). Sem OpenAI. "Nenhum" cai no agrupamento por silêncio (igual à Opção 2).</p>
         </div>
         <div class="dl-card-icon">🤖</div>
       </div>
@@ -636,7 +653,8 @@ const cfg = {
   anthropicKey:'', gdriveFolder:'',
   minClip:75, maxClip:150, noiseDb:-30, minSilence:0.4,
   margin:0.15, language:'pt', width:1080, height:1920,
-  fontSize:14, marginV:18, includeSubtitles:true, useClaude:true
+  fontSize:14, marginV:18, includeSubtitles:true,
+  aiEngine:'claude', ollamaUrl:'http://172.20.0.1:11434/api/generate', ollamaModel:'llama3.1:8b'
 };
 
 function switchTab(id){
@@ -661,7 +679,13 @@ function updateCfg(){
   cfg.fontSize = parseInt(document.getElementById('font-size').value)||14;
   cfg.marginV = parseInt(document.getElementById('margin-v').value)||18;
   cfg.includeSubtitles = document.getElementById('include-subtitles').checked;
-  cfg.useClaude = document.getElementById('use-claude').checked;
+  cfg.aiEngine = document.getElementById('ai-engine').value;
+  cfg.ollamaUrl = document.getElementById('ollama-url').value||'http://172.20.0.1:11434/api/generate';
+  cfg.ollamaModel = document.getElementById('ollama-model').value||'llama3.1:8b';
+
+  document.getElementById('anthropic-key-field').style.display = cfg.aiEngine==='claude' ? '' : 'none';
+  document.getElementById('ollama-url-field').style.display = cfg.aiEngine==='ollama' ? '' : 'none';
+  document.getElementById('ollama-model-field').style.display = cfg.aiEngine==='ollama' ? '' : 'none';
 }
 
 function updateRange(){
@@ -785,7 +809,7 @@ return cl;`;
 }
 
 function buildSemanticWorkflow(){
-  const MIN=cfg.minClip, MAX=cfg.maxClip, sub=cfg.includeSubtitles, useClaude=cfg.useClaude;
+  const MIN=cfg.minClip, MAX=cfg.maxClip, sub=cfg.includeSubtitles, engine=cfg.aiEngine, useAI=engine!=='none';
   const style = `FontSize=${cfg.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=3,Alignment=2,MarginV=${cfg.marginV}`;
 
   const nodes = [
@@ -799,7 +823,8 @@ function buildSemanticWorkflow(){
      parameters:{jsCode:"const t = $('Google Drive Trigger').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName: t.name,\n  videoPath: base + t.name,\n  audioPath: base + 'audio_full.wav'\n}}];\n"}}
   ];
 
-  if (useClaude) {
+  if (useAI) {
+    const prepNodeName = engine==='claude' ? "Preparar Claude" : "Preparar Ollama";
     nodes.push(
       {id:"n5",name:"FFprobe + Extrair Áudio",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[880,300],
        parameters:{command:'=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{{ $json.videoPath }}") && echo "DURATION:$DUR" && ffmpeg -y -i "{{ $json.videoPath }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"'}},
@@ -807,23 +832,27 @@ function buildSemanticWorkflow(){
        parameters:{jsCode:"const c = $('Preparar Caminhos').first().json;\nconst out = $json.stdout || '';\nconst m = out.match(/DURATION:([\\d.]+)/);\nconst duration = m ? parseFloat(m[1]) : 0;\nconst srtBase = '/home/node/.n8n-files/transcript_full';\nreturn [{ json: { ...c, duration, srtBase, srtPath: srtBase + '.srt' } }];\n"}},
       {id:"n7",name:"Whisper.cpp Transcrever Completo",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1240,300],
        parameters:{command:`=whisper -m /models/ggml-base.bin -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"`}},
-      {id:"n8",name:"Preparar Claude",type:"n8n-nodes-base.code",typeVersion:2,position:[1420,300],
-       parameters:{jsCode:"const c = $('Preparar Whisper Completo').first().json;\nconst transcript = $json.stdout || '';\nreturn [{ json: { ...c, transcript } }];\n"}},
-      {id:"n9",name:"Claude — Gerar Clipes",type:"n8n-nodes-base.httpRequest",typeVersion:4,position:[1600,300],
-       parameters:{method:"POST",url:"https://api.anthropic.com/v1/messages",
-         sendHeaders:true,
-         headerParameters:{parameters:[
-           {name:"x-api-key",value:cfg.anthropicKey},
-           {name:"anthropic-version",value:"2023-06-01"},
-           {name:"content-type",value:"application/json"}]},
-         sendBody:true,bodyContentType:"json",specifyBody:"json",
-         jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 3000, system: 'Você é um editor sênior de YouTube Shorts. Analise a transcrição em formato SRT (com timestamps) e identifique até 4 dos MELHORES momentos para Shorts de ${MIN}s a ${MAX}s. Cada clipe deve ser AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUSÃO clara, coesão semântica, e os cortes devem cair em pausas de fala. Use os timestamps do SRT (convertidos para segundos) para start/end. Retorne APENAS JSON sem markdown, no máximo 4 itens, ordenados do melhor para o pior: [{\\"start\\":0,\\"end\\":90,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo da escolha\\"}]', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}`}},
-      {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
-       parameters:{jsCode:`const raw = $json.content[0].text.trim()
+      {id:"n8",name:prepNodeName,type:"n8n-nodes-base.code",typeVersion:2,position:[1420,300],
+       parameters:{jsCode:"const c = $('Preparar Whisper Completo').first().json;\nconst transcript = $json.stdout || '';\nreturn [{ json: { ...c, transcript } }];\n"}}
+    );
+
+    if (engine === 'claude') {
+      nodes.push(
+        {id:"n9",name:"Claude — Gerar Clipes",type:"n8n-nodes-base.httpRequest",typeVersion:4,position:[1600,300],
+         parameters:{method:"POST",url:"https://api.anthropic.com/v1/messages",
+           sendHeaders:true,
+           headerParameters:{parameters:[
+             {name:"x-api-key",value:cfg.anthropicKey},
+             {name:"anthropic-version",value:"2023-06-01"},
+             {name:"content-type",value:"application/json"}]},
+           sendBody:true,bodyContentType:"json",specifyBody:"json",
+           jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 3000, system: 'Você é um editor sênior de YouTube Shorts. Analise a transcrição em formato SRT (com timestamps) e identifique até 4 dos MELHORES momentos para Shorts de ${MIN}s a ${MAX}s. Cada clipe deve ser AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUSÃO clara, coesão semântica, e os cortes devem cair em pausas de fala. Use os timestamps do SRT (convertidos para segundos) para start/end. Retorne APENAS JSON sem markdown, no máximo 4 itens, ordenados do melhor para o pior: [{\\"start\\":0,\\"end\\":90,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo da escolha\\"}]', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}`}},
+        {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
+         parameters:{jsCode:`const raw = $json.content[0].text.trim()
   .replace(/\`\`\`json|\`\`\`/g, '')
   .replace(/^[^[]*/, '');
 const clips = JSON.parse(raw).slice(0, 4);
-const c = $('Preparar Claude').first().json;
+const c = $('${prepNodeName}').first().json;
 const vp = c.videoPath;
 const vn = c.videoName;
 const MIN_DUR = ${MIN}, MAX_DUR = ${MAX};
@@ -863,7 +892,61 @@ for (let i = 0; i < clips.length; i++) {
   });
 }
 return results;`}}
-    );
+      );
+    } else {
+      nodes.push(
+        {id:"n9",name:"Ollama — Gerar Clipes",type:"n8n-nodes-base.httpRequest",typeVersion:4,position:[1600,300],
+         parameters:{method:"POST",url:cfg.ollamaUrl,
+           sendBody:true,bodyContentType:"json",specifyBody:"json",
+           jsonBody:`={{ JSON.stringify({ model: '${cfg.ollamaModel}', stream: false, prompt: 'Você é um editor sênior de YouTube Shorts. Analise a transcrição em formato SRT (com timestamps) e identifique até 5 dos MELHORES momentos para Shorts de ${MIN}s a ${MAX}s. Cada clipe deve ser AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUSÃO clara, coesão semântica, e os cortes devem cair em pausas de fala. Use os timestamps do SRT (convertidos para segundos) para start/end. Retorne APENAS JSON, sem markdown e sem texto fora do JSON, no formato {\\"clips\\":[{\\"start\\":0,\\"end\\":90,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo da escolha\\"}]}, no máximo 5 itens, ordenados do melhor para o pior.\\n\\nDuração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }) }}`}},
+        {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
+         parameters:{jsCode:`const raw = ($json.response || '').trim()
+  .replace(/\`\`\`json|\`\`\`/g, '')
+  .replace(/^[^[{]*/, '');
+const parsed = JSON.parse(raw);
+const clips = (Array.isArray(parsed) ? parsed : (parsed.clips || [])).slice(0, 5);
+const c = $('${prepNodeName}').first().json;
+const vp = c.videoPath;
+const vn = c.videoName;
+const MIN_DUR = ${MIN}, MAX_DUR = ${MAX};
+const base = '/home/node/.n8n-files/';
+const results = [];
+for (let i = 0; i < clips.length; i++) {
+  const clip = clips[i];
+  const dur = clip.end - clip.start;
+  if (dur < MIN_DUR - 10 || dur > MAX_DUR + 15) continue;
+  const idx = String(results.length + 1).padStart(2, '0');
+  const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+  const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';
+  const audioPath = base + 'clip_' + idx + '.wav';
+  const srtBase   = base + 'clip_' + idx;
+  const srtPath   = srtBase + '.srt';
+  const metaPath  = base + 'clip_' + idx + '_meta.json';
+  const ds = Math.round(dur);
+  const metaContent = JSON.stringify({
+    index: results.length + 1,
+    title: clip.title,
+    slug,
+    hook: clip.hook || '',
+    reason: clip.reason || '',
+    start: clip.start,
+    end: clip.end,
+    duration: Math.floor(ds / 60) + 'm' + (ds % 60) + 's',
+    videoSource: vn
+  }, null, 2);
+  results.push({
+    clipStart: Math.max(0, clip.start),
+    clipEnd: clip.end,
+    idx, titleSlug: slug,
+    hook: clip.hook || '', reason: clip.reason || '',
+    videoPath: vp, videoName: vn,
+    outPath, audioPath${sub ? ', srtBase, srtPath' : ''},
+    metaPath, metaContent
+  });
+}
+return results;`}}
+      );
+    }
   } else {
     nodes.push(
       {id:"n5",name:"FFprobe + Silêncios",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[880,300],
@@ -967,13 +1050,15 @@ return cl;`}}
     "Montar Clipes":{main:[[{node:"Loop Over Items",type:"main",index:0}]]},
     "Loop Over Items":{main:[[], [{node:firstLoopNode,type:"main",index:0}]]}
   };
-  if (useClaude) {
+  if (useAI) {
+    const prepNodeName = engine==='claude' ? "Preparar Claude" : "Preparar Ollama";
+    const aiNodeName = engine==='claude' ? "Claude — Gerar Clipes" : "Ollama — Gerar Clipes";
     connections["Preparar Caminhos"] = {main:[[{node:"FFprobe + Extrair Áudio",type:"main",index:0}]]};
     connections["FFprobe + Extrair Áudio"] = {main:[[{node:"Preparar Whisper Completo",type:"main",index:0}]]};
     connections["Preparar Whisper Completo"] = {main:[[{node:"Whisper.cpp Transcrever Completo",type:"main",index:0}]]};
-    connections["Whisper.cpp Transcrever Completo"] = {main:[[{node:"Preparar Claude",type:"main",index:0}]]};
-    connections["Preparar Claude"] = {main:[[{node:"Claude — Gerar Clipes",type:"main",index:0}]]};
-    connections["Claude — Gerar Clipes"] = {main:[[{node:"Montar Clipes",type:"main",index:0}]]};
+    connections["Whisper.cpp Transcrever Completo"] = {main:[[{node:prepNodeName,type:"main",index:0}]]};
+    connections[prepNodeName] = {main:[[{node:aiNodeName,type:"main",index:0}]]};
+    connections[aiNodeName] = {main:[[{node:"Montar Clipes",type:"main",index:0}]]};
   } else {
     connections["Preparar Caminhos"] = {main:[[{node:"FFprobe + Silêncios",type:"main",index:0}]]};
     connections["FFprobe + Silêncios"] = {main:[[{node:"Montar Clipes",type:"main",index:0}]]};
@@ -992,13 +1077,17 @@ return cl;`}}
   connections["Ler Metadados do Disco"] = {main:[[{node:"Upload Metadados → Drive",type:"main",index:0}]]};
   connections["Upload Metadados → Drive"] = {main:[[{node:"Loop Over Items",type:"main",index:0}]]};
 
+  const names = {
+    claude: "YouTube Shorts Generator — Semântico (Claude + Whisper.cpp local, zero API de transcrição)",
+    ollama: "YouTube Shorts Generator — Semântico (Ollama local + Whisper.cpp local, zero custo de API)",
+    none: "YouTube Shorts Generator — Semântico (sem IA, detecção de silêncio + Whisper.cpp local)"
+  };
+
   return {
-    name: useClaude
-      ? "YouTube Shorts Generator — Semântico (Claude + Whisper.cpp local, zero API de transcrição)"
-      : "YouTube Shorts Generator — Semântico (sem Claude, detecção de silêncio + Whisper.cpp local)",
+    name: names[engine],
     nodes, connections,
     settings:{executionOrder:"v1"},
-    meta:{version:"v18-semantic-local", gdriveFolder: cfg.gdriveFolder, includeSubtitles: sub, useClaude}
+    meta:{version:"v18-semantic-local", gdriveFolder: cfg.gdriveFolder, includeSubtitles: sub, aiEngine: engine}
   };
 }
 

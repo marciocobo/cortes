@@ -368,3 +368,4 @@ docker exec n8n ffprobe -version
 - [ ] Thumbnail automática: capturar frame do segundo 2 de cada Short como capa
 - [x] Adicionar legendas à Opção 2 — implementado em v16 com whisper.cpp local (sem API)
 - [x] Remover OpenAI da Opção 1 e usar Claude para escolher até 4 clipes — implementado em v18-semantic-local
+- [ ] Estabilizar e validar em produção o motor **Ollama local** como alternativa gratuita ao Claude na Opção 1 (já preparado no painel HTML, `buildSemanticWorkflow()` com `cfg.aiEngine = 'ollama'`: substitui `Claude — Gerar Clipes` por `Ollama — Gerar Clipes`, HTTP Request para `{ollamaUrl}/api/generate`, mesmo prompt, `format:'json'`, modelo configurável ex. `llama3.1:8b`)
