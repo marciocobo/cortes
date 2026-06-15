@@ -1,0 +1,425 @@
+{
+  "name": "Transcrição Completa — Whisper.cpp local, lote sequencial (sem IA generativa)",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Executar Manualmente",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n2",
+      "name": "Listar Arquivos",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        380,
+        300
+      ],
+      "parameters": {
+        "resource": "fileFolder",
+        "operation": "search",
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl",
+            "mode": "id"
+          }
+        },
+        "returnAll": true
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Selecionar Vídeos Pendentes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst base = '/home/node/.n8n-files/';\nconst videoExts = ['.mp4', '.mov', '.mkv', '.avi', '.webm'];\nconst names = new Set(items.map(i => i.name));\n\nconst pending = [];\nfor (const it of items) {\n  const name = it.name;\n  const dot = name.lastIndexOf('.');\n  const ext = dot >= 0 ? name.slice(dot).toLowerCase() : '';\n  if (!videoExts.includes(ext)) continue;\n\n  const slug = name.replace(/\\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '_');\n  const srtName = slug + '_transcricao.srt';\n  const txtName = slug + '_transcricao.txt';\n\n  // já transcrito? pula\n  if (names.has(srtName) && names.has(txtName)) continue;\n\n  pending.push({\n    fileId: it.id,\n    videoName: name,\n    videoPath: base + name,\n    audioPath: base + slug + '_full.wav',\n    srtBase: base + slug + '_transcricao',\n    srtPath: base + slug + '_transcricao.srt',\n    txtPath: base + slug + '_transcricao.txt',\n    srtName,\n    txtName\n  });\n}\nreturn pending.map(p => ({ json: p }));\n"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        740,
+        300
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Baixar Vídeo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        960,
+        440
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.fileId }}",
+          "mode": "id"
+        }
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Salvar na VPS",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        440
+      ],
+      "parameters": {
+        "fileName": "=/home/node/.n8n-files/{{ $('Loop Over Items').item.json.videoName }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Preparar Paths Clipe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Extrair Áudio Completo",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        440
+      ],
+      "parameters": {
+        "command": "=ffmpeg -y -i \"{{ $json.videoPath }}\" -vn -acodec pcm_s16le -ar 16000 -ac 1 \"{{ $json.audioPath }}\""
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Preparar Whisper",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Whisper.cpp Transcrever Completo",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        440
+      ],
+      "parameters": {
+        "command": "=whisper -m /models/ggml-small.bin -f \"{{ $json.audioPath }}\" -l pt -osrt -otxt -of \"{{ $json.srtBase }}\" -np"
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Preparar Leitura SRT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
+      }
+    },
+    {
+      "id": "n12",
+      "name": "Ler SRT do Disco",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        440
+      ],
+      "parameters": {
+        "filePath": "={{ $json.srtPath }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n13",
+      "name": "Upload SRT → Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2400,
+        440
+      ],
+      "parameters": {
+        "operation": "upload",
+        "name": "={{ $('Loop Over Items').item.json.srtName }}",
+        "parents": [
+          "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
+        ],
+        "inputDataFieldName": "data"
+      }
+    },
+    {
+      "id": "n14",
+      "name": "Preparar Leitura TXT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2580,
+        440
+      ],
+      "parameters": {
+        "jsCode": "const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"
+      }
+    },
+    {
+      "id": "n15",
+      "name": "Ler TXT do Disco",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        2760,
+        440
+      ],
+      "parameters": {
+        "filePath": "={{ $json.txtPath }}",
+        "dataPropertyName": "data"
+      }
+    },
+    {
+      "id": "n16",
+      "name": "Upload TXT → Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2940,
+        440
+      ],
+      "parameters": {
+        "operation": "upload",
+        "name": "={{ $('Loop Over Items').item.json.txtName }}",
+        "parents": [
+          "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
+        ],
+        "inputDataFieldName": "data"
+      }
+    }
+  ],
+  "connections": {
+    "Executar Manualmente": {
+      "main": [
+        [
+          {
+            "node": "Listar Arquivos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar Arquivos": {
+      "main": [
+        [
+          {
+            "node": "Selecionar Vídeos Pendentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Selecionar Vídeos Pendentes": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Baixar Vídeo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixar Vídeo": {
+      "main": [
+        [
+          {
+            "node": "Salvar na VPS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar na VPS": {
+      "main": [
+        [
+          {
+            "node": "Preparar Paths Clipe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Paths Clipe": {
+      "main": [
+        [
+          {
+            "node": "Extrair Áudio Completo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair Áudio Completo": {
+      "main": [
+        [
+          {
+            "node": "Preparar Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Whisper": {
+      "main": [
+        [
+          {
+            "node": "Whisper.cpp Transcrever Completo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper.cpp Transcrever Completo": {
+      "main": [
+        [
+          {
+            "node": "Preparar Leitura SRT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Leitura SRT": {
+      "main": [
+        [
+          {
+            "node": "Ler SRT do Disco",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler SRT do Disco": {
+      "main": [
+        [
+          {
+            "node": "Upload SRT → Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload SRT → Drive": {
+      "main": [
+        [
+          {
+            "node": "Preparar Leitura TXT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Leitura TXT": {
+      "main": [
+        [
+          {
+            "node": "Ler TXT do Disco",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler TXT do Disco": {
+      "main": [
+        [
+          {
+            "node": "Upload TXT → Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload TXT → Drive": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "version": "v2-lote",
+    "gdriveFolder": "1wW1WhX1oyb4jbP0vQded403fQdmDMQQl"
+  }
+}

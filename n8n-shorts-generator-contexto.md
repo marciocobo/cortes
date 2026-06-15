@@ -256,6 +256,7 @@ RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git /whisper.cp
     && cmake -B build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build -j$(nproc) --config Release
 RUN /whisper.cpp/models/download-ggml-model.sh base /whisper.cpp/models
+RUN /whisper.cpp/models/download-ggml-model.sh small /whisper.cpp/models
 
 FROM n8nio/n8n:${N8N_VERSION}
 ARG ALPINE_VERSION
@@ -272,12 +273,13 @@ RUN mkdir -p /etc/apk/keys \
     && apk add --no-cache ffmpeg libstdc++ libgomp \
     && rm -rf /var/cache/apk/*
 
-# Binário whisper + libs + modelo ggml-base
+# Binário whisper + libs + modelos ggml-base e ggml-small
 COPY --from=whisperbuild /whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper
 COPY --from=whisperbuild /whisper.cpp/build/src/libwhisper.so* /usr/local/lib/
 COPY --from=whisperbuild /whisper.cpp/build/ggml/src/libggml*.so* /usr/local/lib/
 RUN mkdir -p /models
 COPY --from=whisperbuild /whisper.cpp/models/ggml-base.bin /models/ggml-base.bin
+COPY --from=whisperbuild /whisper.cpp/models/ggml-small.bin /models/ggml-small.bin
 ENV LD_LIBRARY_PATH=/usr/local/lib
 
 USER node
@@ -336,6 +338,7 @@ docker exec n8n ffprobe -version
 | `workflow-shorts-simple-loop.json` | Opção 2 — v17-loop, igual ao v16 mas processa cada clipe sequencialmente via `Loop Over Items`, garantindo múltiplos Shorts por execução, 16 nodes |
 | `n8n-video-silence-cutter.html` | App web para visualizar os pipelines e baixar os JSONs |
 | `n8n-shorts-generator-contexto.md` | Este arquivo |
+| `n8n-transcricao-contexto.md` | Contexto do workflow de transcrição completa em lote (`workflow-transcricao-completa.json`), separado deste arquivo |
 
 ---
 
@@ -357,6 +360,8 @@ docker exec n8n ffprobe -version
 | v16 | Adicionada legenda na Opção 2 via **whisper.cpp local** (modelo `base`, sem API): extrai áudio do clipe, transcreve com whisper-cli, queima `.srt` com `subtitles` + `force_style` no corte 9:16 |
 | v17-loop | Novo arquivo `workflow-shorts-simple-loop.json`: insere `Loop Over Items` (Split In Batches, batchSize=1) após `Montar Clipes`, processando cada clipe sequencialmente (áudio → whisper → corte+legenda → upload) e voltando ao loop até processar todos os clipes |
 | v18-semantic-local | Opção 1 reescrita: removida a OpenAI Whisper API — transcrição passa a ser feita com **whisper.cpp local** (vídeo inteiro), o `.srt` completo é enviado ao Claude, que escolhe **até 4 clipes**; adotado o mesmo padrão da Opção 2 (Loop Over Items, extrair áudio do clipe, whisper.cpp por clipe para legenda, corte 9:16 com crop centralizado); mantém upload de `_meta.json` (título, hook, motivo) por clipe |
+
+> Versões v19+ (workflow de transcrição completa em lote) foram movidas para [n8n-transcricao-contexto.md](n8n-transcricao-contexto.md).
 
 ---
 
