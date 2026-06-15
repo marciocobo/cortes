@@ -24,7 +24,7 @@ Workflow n8n para geração automática de YouTube Shorts a partir de vídeos lo
 ## Dois Workflows
 
 ### Opção 1 — Semântico (Claude + Whisper.cpp local + FFmpeg)
-Transcreve o vídeo inteiro com whisper.cpp local (sem OpenAI), envia o SRT completo ao Claude, que identifica até **4 dos melhores momentos** semanticamente (gancho, conclusão, autocontido) para clipes de 75s–150s. Cada clipe é processado em loop sequencial: extrai áudio do trecho, gera legenda `.srt` via whisper.cpp, corta em 9:16 com crop centralizado, queima a legenda e faz upload do Short + arquivo `_meta.json` (título, hook, motivo). **Sem OpenAI, único custo é a API do Claude.**
+Transcreve o vídeo inteiro com whisper.cpp local (sem OpenAI), envia o SRT completo ao motor de IA escolhido (Claude, Ollama local ou nenhum), que identifica até **5 dos melhores momentos** semanticamente (gancho, conclusão, autocontido) para clipes de 75s–150s. Cada clipe é processado em loop sequencial: extrai áudio do trecho, gera legenda `.srt` via whisper.cpp (opcional, com toggle no painel), corta em 9:16 com crop centralizado, queima a legenda e faz upload do Short + arquivo `_meta.json` (título, hook, motivo). **Sem OpenAI; com Ollama ou "nenhum" o custo é $0.**
 
 ### Opção 2 — Simples (FFmpeg only, zero custo de API)
 Detecta silêncios por volume de áudio (`silencedetect`), agrupa blocos de fala em clipes de 75s–150s, converte para 9:16 com crop centralizado e faz upload. **Sem OpenAI, sem Anthropic, custo $0.**
@@ -110,11 +110,11 @@ Preparar Claude (Code)
   ↓
 Claude — Gerar Clipes (HTTP Request → Anthropic)
   → recebe a transcrição SRT completa + duração total
-  → identifica até 4 dos MELHORES momentos (gancho, conclusão, autocontido, 75–150s)
-  → retorna JSON: [{ start, end, title, hook, reason }, ...] (máx. 4 itens)
+  → identifica até 5 dos MELHORES momentos (gancho, conclusão, autocontido, 75–150s)
+  → retorna JSON: [{ start, end, title, hook, reason }, ...] (máx. 5 itens)
   ↓
 Montar Clipes (Code)
-  → valida durações (75–150s), limita a 4 clipes
+  → valida durações (75–150s), limita a 5 clipes
   → cada item: { clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath,
                   srtBase, srtPath, metaPath, metaContent, titleSlug, hook, reason }
   ↓
@@ -333,7 +333,7 @@ docker exec n8n ffprobe -version
 
 | Arquivo | Conteúdo |
 |---|---|
-| `workflow-shorts-semantic.json` | Opção 1 — v18-semantic-local, Claude (até 4 clipes) + Whisper.cpp local + FFmpeg + Loop Over Items, 21 nodes, sem OpenAI |
+| `workflow-shorts-semantic.json` | Opção 1 — v18-semantic-local, Claude (até 5 clipes) + Whisper.cpp local + FFmpeg + Loop Over Items, 21 nodes, sem OpenAI |
 | `workflow-shorts-simple.json` | Opção 2 — v16, FFmpeg + Whisper.cpp local, 14 nodes, $0 API |
 | `workflow-shorts-simple-loop.json` | Opção 2 — v17-loop, igual ao v16 mas processa cada clipe sequencialmente via `Loop Over Items`, garantindo múltiplos Shorts por execução, 16 nodes |
 | `n8n-video-silence-cutter.html` | App web para visualizar os pipelines e baixar os JSONs |
@@ -360,6 +360,7 @@ docker exec n8n ffprobe -version
 | v16 | Adicionada legenda na Opção 2 via **whisper.cpp local** (modelo `base`, sem API): extrai áudio do clipe, transcreve com whisper-cli, queima `.srt` com `subtitles` + `force_style` no corte 9:16 |
 | v17-loop | Novo arquivo `workflow-shorts-simple-loop.json`: insere `Loop Over Items` (Split In Batches, batchSize=1) após `Montar Clipes`, processando cada clipe sequencialmente (áudio → whisper → corte+legenda → upload) e voltando ao loop até processar todos os clipes |
 | v18-semantic-local | Opção 1 reescrita: removida a OpenAI Whisper API — transcrição passa a ser feita com **whisper.cpp local** (vídeo inteiro), o `.srt` completo é enviado ao Claude, que escolhe **até 4 clipes**; adotado o mesmo padrão da Opção 2 (Loop Over Items, extrair áudio do clipe, whisper.cpp por clipe para legenda, corte 9:16 com crop centralizado); mantém upload de `_meta.json` (título, hook, motivo) por clipe |
+| v18.1-semantic-local | Opção 1: limite elevado de **4 para 5 clipes** em todos os motores (Claude e Ollama), mantendo validação de duração (75–150s) e legenda por clipe opcional via toggle |
 
 > Versões v19+ (workflow de transcrição completa em lote) foram movidas para [n8n-transcricao-contexto.md](n8n-transcricao-contexto.md).
 
