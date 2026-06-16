@@ -980,7 +980,7 @@ return cl;`;
   const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
   const vf_sub  = `${vf_base},setpts=PTS-STARTPTS,subtitles={{ $json.srtPath }}:force_style='${style}'`;
   const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
-  const silencePrefix = `OEND={{ $json.clipEnd }} && SLEN=$(ffmpeg -y -ss "$OEND" -t 30 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.4" -f null - 2>&1 | grep -m1 "silence_start" | awk '{print $NF}') && AEND=$(awk -v e="$OEND" -v s="$SLEN" 'BEGIN{s=s+0; if(s>0.3 && s<25) printf "%.3f", e+s; else printf "%.3f", e}') && `;
+  const silencePrefix = `OEND={{ $json.clipEnd }} && MAXEND=$(awk -v s={{ $json.clipStart }} 'BEGIN{printf "%.3f", s+90}') && SLEN=$(ffmpeg -y -ss "$OEND" -t 30 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.4" -f null - 2>&1 | grep -m1 "silence_start" | awk '{print $NF}') && AEND=$(awk -v e="$OEND" -v s="$SLEN" -v m="$MAXEND" 'BEGIN{s=s+0; c=e+s; if(s>0.3 && s<25 && c<=m) printf "%.3f", c; else if(e<=m) printf "%.3f", e; else printf "%.3f", m}') && `;
   const ffBase = `-y -ss "{{ $json.clipStart }}" -to "$AEND" -i "{{ $json.videoPath }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
   const cutCmd = sub
     ? `=${silencePrefix}(test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}")`
@@ -1073,7 +1073,7 @@ function buildSemanticWorkflow(){
              {name:"anthropic-version",value:"2023-06-01"},
              {name:"content-type",value:"application/json"}]},
            sendBody:true,bodyContentType:"json",specifyBody:"json",
-           jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, system: 'Você é um editor sênior de YouTube Shorts especialista em retenção de audiência em português. Analise a transcrição SRT completa e identifique de 5 a 8 clipes avaliando 7 critérios combinados. Use os timestamps SRT para calcular ritmo de fala (palavras ÷ segundos do trecho).\\n\\nCRITÉRIOS:\\n1. GANCHO INICIAL (mais importante): Trecho começa com frase que prende nos 3s? (pergunta direta, revelação, afirmação forte, estatística). Sem gancho = descartado.\\n2. EMOÇÃO NA FALA: Palavras de surpresa, indignação, entusiasmo, empatia, exclamações, urgência.\\n3. VELOCIDADE DA FALA: Ritmo ideal 2-3 palavras/segundo (calcule pelos timestamps SRT). Muito lento ou muito rápido reduz pontuação.\\n4. MUDANÇA DE TOM: Variação de energia no trecho (pergunta→resposta, problema→solução, exclamações, negações enfáticas).\\n5. PALAVRAS DE IMPACTO: segredo, erro, nunca, sempre, incrível, absurdo, revelação, cuidado, atenção, simples, rápido, impossível, mudou, descobri, funciona.\\n6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — permitido até 180s. NUNCA trunque para caber no tempo.\\n7. RETENÇÃO ESTIMADA: O clipe cria tensão/curiosidade para ser assistido até o fim?\\n\\nREGRAS INEGOCIÁVEIS: cortes em pausas de fala (nunca no meio de frase), clipe autocontido, leia TODA a transcrição antes de decidir.\\n\\nRetorne APENAS JSON válido sem markdown, do melhor para o pior:\\n[{\\"start\\":12.4,\\"end\\":68.9,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase exata de abertura\\",\\"reason\\":\\"Por que funciona\\",\\"retention_score\\":87}]', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}`}},
+           jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, system: 'Você é um editor sênior de YouTube Shorts especialista em retenção de audiência em português. Analise a transcrição SRT completa e identifique de 5 a 8 clipes avaliando 7 critérios combinados. Use os timestamps SRT para calcular ritmo de fala (palavras ÷ segundos do trecho).\\n\\nCRITÉRIOS:\\n1. GANCHO INICIAL (mais importante): Trecho começa com frase que prende nos 3s? (pergunta direta, revelação, afirmação forte, estatística). Sem gancho = descartado.\\n2. EMOÇÃO NA FALA: Palavras de surpresa, indignação, entusiasmo, empatia, exclamações, urgência.\\n3. VELOCIDADE DA FALA: Ritmo ideal 2-3 palavras/segundo (calcule pelos timestamps SRT). Muito lento ou muito rápido reduz pontuação.\\n4. MUDANÇA DE TOM: Variação de energia no trecho (pergunta→resposta, problema→solução, exclamações, negações enfáticas).\\n5. PALAVRAS DE IMPACTO: segredo, erro, nunca, sempre, incrível, absurdo, revelação, cuidado, atenção, simples, rápido, impossível, mudou, descobri, funciona.\\n6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — permitido até 90s. NUNCA trunque para caber no tempo.\\n7. RETENÇÃO ESTIMADA: O clipe cria tensão/curiosidade para ser assistido até o fim?\\n\\nREGRAS INEGOCIÁVEIS: cortes em pausas de fala (nunca no meio de frase), clipe autocontido, leia TODA a transcrição antes de decidir.\\n\\nRetorne APENAS JSON válido sem markdown, do melhor para o pior:\\n[{\\"start\\":12.4,\\"end\\":68.9,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase exata de abertura\\",\\"reason\\":\\"Por que funciona\\",\\"retention_score\\":87}]', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}`}},
         {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
          parameters:{jsCode:`const text = (($json.content && $json.content[0] && $json.content[0].text) || '').trim();
 const match = text.match(/\\[[\\s\\S]*\\]/);
@@ -1090,7 +1090,7 @@ const results = [];
 for (let i = 0; i < clips.length; i++) {
   const clip = clips[i];
   const dur = clip.end - clip.start;
-  if (dur < MIN_DUR - 10 || dur > 180) continue;
+  if (dur < MIN_DUR - 10 || dur > 90) continue;
   const idx = String(results.length + 1).padStart(2, '0');
   const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
   const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';
@@ -1131,7 +1131,7 @@ return results;`}}
            sendHeaders:true,
            headerParameters:{parameters:[{name:"content-type",value:"application/json"}]},
            sendBody:true,bodyContentType:"json",specifyBody:"json",
-           jsonBody:`={{ JSON.stringify({ contents: [{ parts: [{ text: 'Você é um editor de YouTube Shorts especialista em conteúdo viral em português. Analise a transcrição SRT e identifique até 12 clipes avaliando 7 critérios. Use os timestamps SRT para calcular ritmo de fala (palavras ÷ segundos do trecho).\\n\\nCRITÉRIOS:\\n1. GANCHO INICIAL (mais importante): Começa com frase que para o scroll nos 3s? (revelação, pergunta, afirmação forte, estatística). Sem gancho = descartado.\\n2. EMOÇÃO NA FALA: Surpresa, indignação, entusiasmo, empatia, exclamações, urgência.\\n3. VELOCIDADE DA FALA: Ritmo ideal 2-3 palavras/segundo (timestamps SRT). Monotonia ou atropelamento reduz pontuação.\\n4. MUDANÇA DE TOM: Variação de energia (pergunta→resposta, problema→solução, exclamações, negações enfáticas).\\n5. PALAVRAS DE IMPACTO: segredo, erro, nunca, sempre, incrível, absurdo, revelação, cuidado, atenção, simples, rápido, impossível, mudou, descobri, funciona.\\n6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — permitido até 180s. NUNCA trunque para caber no tempo.\\n7. RETENÇÃO ESTIMADA: Cria tensão/curiosidade para assistir até o fim?\\n\\nREGRAS: cortes em pausas de fala, clipe autocontido, leia TODA a transcrição antes de decidir. Do mais viral para o menos.\\nRetorne APENAS JSON sem markdown: [{\\"start\\":0,\\"end\\":65,\\"title\\":\\"slug\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Por que é viral\\",\\"retention_score\\":87}]\\n\\nDuração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }, generationConfig: { responseMimeType: 'application/json' } }) }}`}},
+           jsonBody:`={{ JSON.stringify({ contents: [{ parts: [{ text: 'Você é um editor de YouTube Shorts especialista em conteúdo viral em português. Analise a transcrição SRT e identifique até 12 clipes avaliando 7 critérios. Use os timestamps SRT para calcular ritmo de fala (palavras ÷ segundos do trecho).\\n\\nCRITÉRIOS:\\n1. GANCHO INICIAL (mais importante): Começa com frase que para o scroll nos 3s? (revelação, pergunta, afirmação forte, estatística). Sem gancho = descartado.\\n2. EMOÇÃO NA FALA: Surpresa, indignação, entusiasmo, empatia, exclamações, urgência.\\n3. VELOCIDADE DA FALA: Ritmo ideal 2-3 palavras/segundo (timestamps SRT). Monotonia ou atropelamento reduz pontuação.\\n4. MUDANÇA DE TOM: Variação de energia (pergunta→resposta, problema→solução, exclamações, negações enfáticas).\\n5. PALAVRAS DE IMPACTO: segredo, erro, nunca, sempre, incrível, absurdo, revelação, cuidado, atenção, simples, rápido, impossível, mudou, descobri, funciona.\\n6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — permitido até 90s. NUNCA trunque para caber no tempo.\\n7. RETENÇÃO ESTIMADA: Cria tensão/curiosidade para assistir até o fim?\\n\\nREGRAS: cortes em pausas de fala, clipe autocontido, leia TODA a transcrição antes de decidir. Do mais viral para o menos.\\nRetorne APENAS JSON sem markdown: [{\\"start\\":0,\\"end\\":65,\\"title\\":\\"slug\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Por que é viral\\",\\"retention_score\\":87}]\\n\\nDuração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }, generationConfig: { responseMimeType: 'application/json' } }) }}`}},
         {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
          parameters:{jsCode:`const text = (($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] && $json.candidates[0].content.parts[0].text) || '').trim();
 const match = text.match(/\\[[\\s\\S]*\\]/);
@@ -1148,7 +1148,7 @@ const results = [];
 for (let i = 0; i < clips.length; i++) {
   const clip = clips[i];
   const dur = clip.end - clip.start;
-  if (dur < MIN_DUR - 10 || dur > 180) continue;
+  if (dur < MIN_DUR - 10 || dur > 90) continue;
   const idx = String(results.length + 1).padStart(2, '0');
   const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
   const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';
@@ -1204,7 +1204,7 @@ const results = [];
 for (let i = 0; i < clips.length; i++) {
   const clip = clips[i];
   const dur = clip.end - clip.start;
-  if (dur < MIN_DUR - 10 || dur > 180) continue;
+  if (dur < MIN_DUR - 10 || dur > 90) continue;
   const idx = String(results.length + 1).padStart(2, '0');
   const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
   const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';
@@ -1324,7 +1324,7 @@ return cl;`}}
   const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
   const vf_sub  = `${vf_base},setpts=PTS-STARTPTS,subtitles={{ $json.srtPath }}:force_style='${style}'`;
   const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
-  const silencePrefix = `OEND={{ $json.clipEnd }} && SLEN=$(ffmpeg -y -ss "$OEND" -t 30 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.4" -f null - 2>&1 | grep -m1 "silence_start" | awk '{print $NF}') && AEND=$(awk -v e="$OEND" -v s="$SLEN" 'BEGIN{s=s+0; if(s>0.3 && s<25) printf "%.3f", e+s; else printf "%.3f", e}') && `;
+  const silencePrefix = `OEND={{ $json.clipEnd }} && MAXEND=$(awk -v s={{ $json.clipStart }} 'BEGIN{printf "%.3f", s+90}') && SLEN=$(ffmpeg -y -ss "$OEND" -t 30 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.4" -f null - 2>&1 | grep -m1 "silence_start" | awk '{print $NF}') && AEND=$(awk -v e="$OEND" -v s="$SLEN" -v m="$MAXEND" 'BEGIN{s=s+0; c=e+s; if(s>0.3 && s<25 && c<=m) printf "%.3f", c; else if(e<=m) printf "%.3f", e; else printf "%.3f", m}') && `;
   const ffBase = `-y -ss "{{ $json.clipStart }}" -to "$AEND" -i "{{ $json.videoPath }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
   const cutCmd = sub
     ? `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && (test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}")`
@@ -1429,7 +1429,7 @@ Retorne APENAS JSON sem markdown: [{"blockIndex":1,"score":85,"criteria":{"ganch
 3. VELOCIDADE DA FALA: Use timestamps SRT para calcular ritmo (palavras/segundo). Ideal 2-3 p/s.
 4. MUDANÇA DE TOM: Prefira trechos com variação de energia (pergunta→resposta, problema→solução, exclamações).
 5. PALAVRAS DE IMPACTO: Favoreça trechos com: segredo, erro, nunca, sempre, incrível, revelação, cuidado, atenção, simples, impossível.
-6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — permitido até 180s. NUNCA trunque para caber no tempo.
+6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — permitido até 90s. NUNCA trunque para caber no tempo.
 7. RETENÇÃO ESTIMADA: O clipe cria tensão/curiosidade suficiente para ser assistido até o fim?
 
 REGRAS INEGOCIÁVEIS — LEIA COM ATENÇÃO:
@@ -1590,7 +1590,7 @@ return results;`;
   const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
   const vf_sub  = `${vf_base},setpts=PTS-STARTPTS,subtitles={{ $json.srtPath }}:force_style='${style}'`;
   const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
-  const silencePrefix = `OEND={{ $json.clipEnd }} && SLEN=$(ffmpeg -y -ss "$OEND" -t 30 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.4" -f null - 2>&1 | grep -m1 "silence_start" | awk '{print $NF}') && AEND=$(awk -v e="$OEND" -v s="$SLEN" 'BEGIN{s=s+0; if(s>0.3 && s<25) printf "%.3f", e+s; else printf "%.3f", e}') && `;
+  const silencePrefix = `OEND={{ $json.clipEnd }} && MAXEND=$(awk -v s={{ $json.clipStart }} 'BEGIN{printf "%.3f", s+90}') && SLEN=$(ffmpeg -y -ss "$OEND" -t 30 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.4" -f null - 2>&1 | grep -m1 "silence_start" | awk '{print $NF}') && AEND=$(awk -v e="$OEND" -v s="$SLEN" -v m="$MAXEND" 'BEGIN{s=s+0; c=e+s; if(s>0.3 && s<25 && c<=m) printf "%.3f", c; else if(e<=m) printf "%.3f", e; else printf "%.3f", m}') && `;
   const ffBase = `-y -ss "{{ $json.clipStart }}" -to "$AEND" -i "{{ $json.videoPath }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
   const cutCmd = sub
     ? `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && (test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}")`
