@@ -161,7 +161,7 @@
     <br><br>
     <b>• Claude</b> (padrão) — o fluxo acima é gerado na íntegra: whisper.cpp transcreve o vídeo inteiro e o Claude (Anthropic) escolhe até <b>5 clipes</b> com hook/reason.
     <br><br>
-    <b>• Ollama (local)</b> — mesma transcrição completa via whisper.cpp, mas a etapa <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude — Gerar Clipes</code> é substituída por <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Ollama — Gerar Clipes</code> (HTTP POST para <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">http://172.20.0.1:11434/api/generate</code>, body <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">{"model":"llama3.1:8b","prompt":"...","stream":false}</code>), usando o mesmo prompt e retornando hook/reason — mas com até <b>5 clipes</b>. Zero custo de API.
+    <b>• Ollama (local)</b> — mesma transcrição completa via whisper.cpp, mas a etapa <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude — Gerar Clipes</code> é substituída por <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Ollama — Gerar Clipes</code> (HTTP POST para <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">http://ollama:11434/api/generate</code>, body <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">{"model":"llama3.1:8b","prompt":"...","stream":false}</code>), usando o mesmo prompt e retornando hook/reason — mas com até <b>5 clipes</b>. Zero custo de API.
     <br><br>
     <b>• Nenhum</b> — os nodes de transcrição completa e a chamada de IA (<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Whisper Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Whisper.cpp Transcrever Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Claude/Ollama</code> e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude/Ollama — Gerar Clipes</code>) são removidos. <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Caminhos</code> segue direto para <b>FFprobe + Silêncios</b> (igual à Opção 2), e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Montar Clipes</code> agrupa por <b>detecção de silêncio</b>, gerando <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">hook</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">reason</code> vazios no <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code>.
     <br><br>
@@ -457,9 +457,9 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
     <div class="field">
       <label>Opção 1: motor de escolha dos melhores momentos</label>
       <select id="ai-engine" onchange="updateCfg()">
-        <option value="claude" selected>Claude (Anthropic — pago)</option>
+        <option value="claude">Claude (Anthropic — pago)</option>
         <option value="ollama">Ollama (modelo local — grátis)</option>
-        <option value="none">Nenhum — agrupar por silêncio (igual Opção 2)</option>
+        <option value="none" selected>Nenhum — agrupar por silêncio (igual Opção 2)</option>
       </select>
       <div class="field-hint">Define como a Opção 1 escolhe até 5 clipes. "Ollama" usa um modelo local na própria VPS (ex: llama3.1:8b) com o mesmo prompt do Claude. "Nenhum" cai no agrupamento por detecção de silêncio, mantendo whisper.cpp local e upload de <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code> (com hook/reason vazios).</div>
     </div>
@@ -470,8 +470,8 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
     </div>
     <div class="field" id="ollama-url-field" style="display:none">
       <label>Ollama URL (endpoint da API)</label>
-      <input type="text" id="ollama-url" placeholder="http://172.20.0.1:11434/api/generate" value="http://172.20.0.1:11434/api/generate" oninput="updateCfg()">
-      <div class="field-hint">Endpoint completo (com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/api/generate</code>) do Ollama na VPS. <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">172.20.0.1</code> é o IP do host Docker visto de dentro de um container — ajuste conforme sua rede.</div>
+      <input type="text" id="ollama-url" placeholder="http://ollama:11434/api/generate" value="http://ollama:11434/api/generate" oninput="updateCfg()">
+      <div class="field-hint">Endpoint completo (com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/api/generate</code>) do Ollama na VPS. <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ollama</code> é o nome do serviço/host na rede Docker — ajuste conforme sua rede.</div>
     </div>
     <div class="field" id="ollama-model-field" style="display:none">
       <label>Ollama — modelo</label>
@@ -489,12 +489,12 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
     <h3>🎬 Duração dos Clipes</h3>
     <div class="field">
       <label>Duração mínima do clipe (segundos)</label>
-      <input type="number" id="min-clip" value="75" min="30" max="120" step="1" oninput="updateCfg();updateRange()">
+      <input type="number" id="min-clip" value="45" min="30" max="120" step="1" oninput="updateCfg();updateRange()">
       <div class="field-hint">75s = 1 minuto e 15 segundos</div>
     </div>
     <div class="field">
       <label>Duração máxima do clipe (segundos)</label>
-      <input type="number" id="max-clip" value="150" min="60" max="180" step="1" oninput="updateCfg();updateRange()">
+      <input type="number" id="max-clip" value="55" min="30" max="180" step="1" oninput="updateCfg();updateRange()">
       <div class="field-hint">150s = 2 minutos e 30 segundos</div>
     </div>
     <div class="range-display" id="range-display">🎯 Alvo: 1m15s → 2m30s</div>
@@ -541,8 +541,8 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
     <div class="field">
       <label>Estilo da legenda</label>
       <select id="caption-style" onchange="updateCfg()">
-        <option value="phrase" selected>Frase completa</option>
-        <option value="word">Palavra a palavra (estilo Reels/TikTok)</option>
+        <option value="phrase">Frase completa</option>
+        <option value="word" selected>Palavra a palavra (estilo Reels/TikTok)</option>
       </select>
       <div class="field-hint">"Palavra a palavra" usa <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">--max-len 1 --split-on-word</code> no whisper.cpp, gerando uma palavra por timestamp no .srt do clipe — visual mais dinâmico, porém .srt maior.</div>
     </div>
@@ -659,10 +659,10 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
 <script>
 const cfg = {
   anthropicKey:'', gdriveFolder:'',
-  minClip:75, maxClip:150, noiseDb:-30, minSilence:0.4,
+  minClip:45, maxClip:55, noiseDb:-30, minSilence:0.4,
   margin:0.15, language:'pt', width:1080, height:1920,
-  fontSize:18, marginV:30, includeSubtitles:true, captionStyle:'phrase',
-  aiEngine:'claude', ollamaUrl:'http://172.20.0.1:11434/api/generate', ollamaModel:'llama3.1:8b'
+  fontSize:18, marginV:30, includeSubtitles:true, captionStyle:'word',
+  aiEngine:'none', ollamaUrl:'http://ollama:11434/api/generate', ollamaModel:'llama3.1:8b'
 };
 
 function switchTab(id){
@@ -689,7 +689,7 @@ function updateCfg(){
   cfg.includeSubtitles = document.getElementById('include-subtitles').checked;
   cfg.captionStyle = document.getElementById('caption-style').value;
   cfg.aiEngine = document.getElementById('ai-engine').value;
-  cfg.ollamaUrl = document.getElementById('ollama-url').value||'http://172.20.0.1:11434/api/generate';
+  cfg.ollamaUrl = document.getElementById('ollama-url').value||'http://ollama:11434/api/generate';
   cfg.ollamaModel = document.getElementById('ollama-model').value||'llama3.1:8b';
 
   document.getElementById('anthropic-key-field').style.display = cfg.aiEngine==='claude' ? '' : 'none';
@@ -705,7 +705,7 @@ function updateRange(){
 }
 
 function buildSimpleWorkflow(){
-  const MIN=cfg.minClip, sub=cfg.includeSubtitles, mg=cfg.margin;
+  const MIN=cfg.minClip, MAX=cfg.maxClip, sub=cfg.includeSubtitles, mg=cfg.margin;
   const wordFlags = cfg.captionStyle === 'word' ? ' --max-len 1 --split-on-word' : '';
   const style = `FontName=Poppins,Bold=1,FontSize=${cfg.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=0,Outline=0,Shadow=1,Alignment=2,MarginV=${cfg.marginV}`;
 
@@ -714,16 +714,24 @@ const m   = out.match(/DURATION:([\\d.]+)/);
 const tot = m ? parseFloat(m[1]) : 600;
 const vp  = $('Paths: Vídeo').first().json.videoPath;
 const vn  = $('Paths: Vídeo').first().json.videoName;
-const MIN=${MIN}, mg=${mg};
+const MIN=${MIN}, MAX=${MAX}, mg=${mg};
 const ss = [...out.matchAll(/silence_start: ([\\d.]+)/g)].map(x=>+x[1]);
 const se = [...out.matchAll(/silence_end: ([\\d.]+)/g)].map(x=>+x[1]);
+// blocos de fala (bl) separados por pausas (gap = duracao do silencio seguinte)
 const bl=[]; let p=0;
-ss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s}); p=se[i]||s+.5; });
-bl.push({s:p,e:tot});
-const cl=[]; let cs=bl[0]?.s||0, du=0;
-bl.forEach((b,i)=>{
+ss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s,gap:(se[i]||s+.5)-s}); p=se[i]||s+.5; });
+bl.push({s:p,e:tot,gap:0});
+const MAX_CLIPS=12;
+const cl=[]; let cs=bl[0]?.s||0, du=0, best=-1, bestGap=-1;
+for (let i=0; i<bl.length; i++) {
+  const b = bl[i];
   du += b.e - b.s;
-  if (du >= MIN) {
+  // dentro da janela [MIN,MAX]: guarda o melhor ponto de corte (maior pausa)
+  if (du >= MIN && du <= MAX && b.gap > bestGap) { bestGap = b.gap; best = i; }
+  const forceCut = du > MAX && best === -1;
+  if (forceCut) { bestGap = b.gap; best = i; }
+  if (best !== -1 && (du >= MAX || i === bl.length-1)) {
+    const cutBlock = bl[best];
     const idx = String(cl.length+1).padStart(2,'0');
     const outPath   = '/home/node/.n8n-files/short_'+idx+'.mp4';${sub ? `
     const audioPath = '/home/node/.n8n-files/clip_'+idx+'.wav';
@@ -731,13 +739,15 @@ bl.forEach((b,i)=>{
     const srtPath   = srtBase+'.srt';` : ''}
     cl.push({
       clipStart: Math.max(0, cs - mg),
-      clipEnd:   b.e + mg,
+      clipEnd:   cutBlock.e + mg,
       idx, videoPath: vp, videoName: vn, outPath${sub ? ', audioPath, srtBase, srtPath' : ''}
     });
-    cs = bl[i+1]?.s || b.e;
-    du = 0;
+    if (cl.length >= MAX_CLIPS) break;
+    cs = bl[best+1]?.s ?? cutBlock.e;
+    du = bl.slice(best+1, i+1).reduce((a,x)=>a+(x.e-x.s),0);
+    best = -1; bestGap = -1;
   }
-});
+}
 return cl;`;
 
   const nodes = [
@@ -760,7 +770,7 @@ return cl;`;
   if (sub) {
     nodes.push(
       {id:"n6b",name:"Extrair Áudio do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1500,440],
-       parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -to "{{ $json.clipEnd }}" -i "{{ $json.videoPath }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
+       parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -i "{{ $json.videoPath }}" -t "{{ $json.clipEnd - $json.clipStart }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
       {id:"n6c",name:"Preparar Whisper",type:"n8n-nodes-base.code",typeVersion:2,position:[1680,440],
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
       {id:"n6d",name:"Whisper.cpp Transcrever",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1860,440],
@@ -770,13 +780,16 @@ return cl;`;
     );
   }
 
-  const vf = sub
-    ? `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2,subtitles={{ $json.srtPath }}:force_style='${style}'`
-    : `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
+  const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
+  const vf_sub  = `${vf_base},subtitles={{ $json.srtPath }}:force_style='${style}'`;
   const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
+  const ffBase = `-y -ss "{{ $json.clipStart }}" -i "{{ $json.videoPath }}" -t "{{ $json.clipEnd - $json.clipStart }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
+  const cutCmd = sub
+    ? `=test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`
+    : `=ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`;
 
   nodes.push({id:"n7",name:cutNodeName,type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2220,440],
-    parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -to "{{ $json.clipEnd }}" -i "{{ $json.videoPath }}" -vf "${vf}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart "{{ $json.outPath }}"`}});
+    parameters:{command:cutCmd}});
 
   nodes.push(
     {id:"n7b",name:"Preparar Leitura",type:"n8n-nodes-base.code",typeVersion:2,position:[2400,440],
@@ -862,7 +875,7 @@ function buildSemanticWorkflow(){
              {name:"anthropic-version",value:"2023-06-01"},
              {name:"content-type",value:"application/json"}]},
            sendBody:true,bodyContentType:"json",specifyBody:"json",
-           jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, system: 'Você é um editor sênior de YouTube Shorts. Analise a transcrição em formato SRT (com timestamps) e identifique até 5 dos MELHORES momentos para Shorts de ${MIN}s a ${MAX}s. Cada clipe deve ser AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUSÃO clara, coesão semântica, e os cortes devem cair em pausas de fala. Use os timestamps do SRT (convertidos para segundos) para start/end. Retorne APENAS JSON sem markdown, no máximo 5 itens, ordenados do melhor para o pior: [{\\"start\\":0,\\"end\\":90,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo da escolha\\"}]', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}`}},
+           jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, system: 'Editor de YouTube Shorts. Na transcrição SRT abaixo, ache até 5 trechos de ${MIN}-${MAX}s: autocontidos, com gancho nos 3s iniciais, conclusão clara, cortes em pausas de fala (use timestamps do SRT em segundos). Retorne APENAS JSON sem markdown, ordenado do melhor pro pior: [{\\"start\\":0,\\"end\\":90,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo\\"}]', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}`}},
         {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
          parameters:{jsCode:`const text = (($json.content && $json.content[0] && $json.content[0].text) || '').trim();
 const match = text.match(/\\[[\\s\\S]*\\]/);
@@ -916,7 +929,7 @@ return results;`}}
         {id:"n9",name:"Ollama — Gerar Clipes",type:"n8n-nodes-base.httpRequest",typeVersion:4,position:[1600,300],
          parameters:{method:"POST",url:cfg.ollamaUrl,
            sendBody:true,bodyContentType:"json",specifyBody:"json",
-           jsonBody:`={{ JSON.stringify({ model: '${cfg.ollamaModel}', stream: false, format: 'json', prompt: 'Você é um editor sênior de YouTube Shorts. Analise a transcrição em formato SRT (com timestamps) e identifique até 5 dos MELHORES momentos para Shorts de ${MIN}s a ${MAX}s. Cada clipe deve ser AUTOCONTIDO, ter GANCHO nos 3 primeiros segundos, CONCLUSÃO clara, coesão semântica, e os cortes devem cair em pausas de fala. Use os timestamps do SRT (convertidos para segundos) para start/end. Responda APENAS com um objeto JSON, sem markdown e sem texto fora do JSON, EXATAMENTE no formato {\\"clips\\":[{\\"start\\":0,\\"end\\":90,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo da escolha\\"}]}, no máximo 5 itens, ordenados do melhor para o pior.\\n\\nDuração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }) }}`}},
+           jsonBody:`={{ JSON.stringify({ model: '${cfg.ollamaModel}', stream: false, format: 'json', prompt: 'Editor de YouTube Shorts. Na transcrição SRT abaixo, ache até 5 trechos de ${MIN}-${MAX}s: autocontidos, com gancho nos 3s iniciais, conclusão clara, cortes em pausas de fala (use timestamps do SRT em segundos). Responda APENAS com um objeto JSON, sem markdown, EXATAMENTE no formato {\\"clips\\":[{\\"start\\":0,\\"end\\":90,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo\\"}]}, ordenado do melhor pro pior.\\n\\nDuração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }) }}`}},
         {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
          parameters:{jsCode:`const text = ($json.response || '').trim();
 const match = text.match(/[\\[{][\\s\\S]*[\\]}]/);
@@ -977,20 +990,28 @@ const tot = m ? parseFloat(m[1]) : 600;
 const c   = $('Preparar Caminhos').first().json;
 const vp  = c.videoPath;
 const vn  = c.videoName;
-const MIN=${MIN}, mg=${cfg.margin};
+const MIN=${MIN}, MAX=${MAX}, mg=${cfg.margin};
 const base = '/home/node/.n8n-files/';
 const ss = [...out.matchAll(/silence_start: ([\\d.]+)/g)].map(x=>+x[1]);
 const se = [...out.matchAll(/silence_end: ([\\d.]+)/g)].map(x=>+x[1]);
+// blocos de fala (bl) separados por pausas (gap = duracao do silencio seguinte)
 const bl=[]; let p=0;
-ss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s}); p=se[i]||s+.5; });
-bl.push({s:p,e:tot});
-const cl=[]; let cs=bl[0]?.s||0, du=0;
-bl.forEach((b,i)=>{
+ss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s,gap:(se[i]||s+.5)-s}); p=se[i]||s+.5; });
+bl.push({s:p,e:tot,gap:0});
+const MAX_CLIPS=12;
+const cl=[]; let cs=bl[0]?.s||0, du=0, best=-1, bestGap=-1;
+for (let i=0; i<bl.length; i++) {
+  const b = bl[i];
   du += b.e - b.s;
-  if (du >= MIN) {
+  // dentro da janela [MIN,MAX]: guarda o melhor ponto de corte (maior pausa)
+  if (du >= MIN && du <= MAX && b.gap > bestGap) { bestGap = b.gap; best = i; }
+  const forceCut = du > MAX && best === -1;
+  if (forceCut) { bestGap = b.gap; best = i; }
+  if (best !== -1 && (du >= MAX || i === bl.length-1)) {
+    const cutBlock = bl[best];
     const idx = String(cl.length+1).padStart(2,'0');
     const clipStart = Math.max(0, cs - mg);
-    const clipEnd   = b.e + mg;
+    const clipEnd   = cutBlock.e + mg;
     const slug = 'clip-'+idx;
     const outPath   = base+'short_'+idx+'.mp4';
     const audioPath = base+'clip_'+idx+'.wav';
@@ -1012,10 +1033,12 @@ bl.forEach((b,i)=>{
       outPath, audioPath${sub ? ', srtBase, srtPath' : ''},
       metaPath, metaContent
     });
-    cs = bl[i+1]?.s || b.e;
-    du = 0;
+    if (cl.length >= MAX_CLIPS) break;
+    cs = bl[best+1]?.s ?? cutBlock.e;
+    du = bl.slice(best+1, i+1).reduce((a,x)=>a+(x.e-x.s),0);
+    best = -1; bestGap = -1;
   }
-});
+}
 return cl;`}}
     );
   }
@@ -1028,7 +1051,7 @@ return cl;`}}
   if (sub) {
     nodes.push(
       {id:"n10b",name:"Extrair Áudio do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2180,440],
-       parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -to "{{ $json.clipEnd }}" -i "{{ $json.videoPath }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
+       parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -i "{{ $json.videoPath }}" -t "{{ $json.clipEnd - $json.clipStart }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
       {id:"n10c",name:"Preparar Whisper",type:"n8n-nodes-base.code",typeVersion:2,position:[2360,440],
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
       {id:"n10d",name:"Whisper.cpp Transcrever",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2540,440],
@@ -1038,13 +1061,16 @@ return cl;`}}
     );
   }
 
-  const vf = sub
-    ? `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2,subtitles={{ $json.srtPath }}:force_style='${style}'`
-    : `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
+  const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
+  const vf_sub  = `${vf_base},subtitles={{ $json.srtPath }}:force_style='${style}'`;
   const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
+  const ffBase = `-y -ss "{{ $json.clipStart }}" -i "{{ $json.videoPath }}" -t "{{ $json.clipEnd - $json.clipStart }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
+  const cutCmd = sub
+    ? `=printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`
+    : `=printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`;
 
   nodes.push({id:"n11",name:cutNodeName,type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2900,440],
-    parameters:{command:`=printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && ffmpeg -y -ss "{{ $json.clipStart }}" -to "{{ $json.clipEnd }}" -i "{{ $json.videoPath }}" -vf "${vf}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart "{{ $json.outPath }}"`}});
+    parameters:{command:cutCmd}});
 
   nodes.push(
     {id:"n12",name:"Preparar Leitura",type:"n8n-nodes-base.code",typeVersion:2,position:[3080,440],
