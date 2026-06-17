@@ -57,11 +57,12 @@ O `_meta.json` de cada clipe inclui `retention_score` (do 2º passe), `block_sco
 
 ## Regras de Corte (AI)
 
-- **Duração**: mínimo 30s, ideal 40–70s; se o raciocínio não couber em 70s, o `end` pode avançar até completar o pensamento (máx. 180s)
+- **Duração**: mínimo 30s, ideal 40–70s; se o raciocínio não couber em 70s, o `end` pode avançar até completar o pensamento (máx. 90s = limite prático YouTube Shorts)
 - **Fim obrigatório**: o `end` deve cair no fim de um raciocínio completo (conclusão, resposta à pergunta, ou cliffhanger intencional). Proibido terminar em enumeração, vírgula ou conjunção
+- **Extensão por silêncio**: após o `end` da IA, o Execute Command roda `ffmpeg silencedetect` nos 30s seguintes e estende `AEND` até a próxima pausa natural (≥0.4s, ≤25s à frente), respeitando o cap de `clipStart + 90s`
 - **Cortes**: sempre em pausas de fala (nunca no meio de palavra ou frase)
 - **Clipe autocontido**: quem assiste sem contexto deve entender início, meio e fim
-- **Filtro no código**: clipes com `dur < minClip - 10` ou `dur > 180` são descartados
+- **Filtro no código**: clipes com `dur < minClip - 10` ou `dur > 90` são descartados
 
 ---
 
@@ -70,7 +71,7 @@ O `_meta.json` de cada clipe inclui `retention_score` (do 2º passe), `block_sco
 | Campo | Padrão | Usado em |
 |---|---|---|
 | Duração mínima do clipe | 30s | Opções 1, 2, 3 |
-| Duração máxima do clipe | 70s | Opções 1, 2, 3 (soft limit — pode extender até 180s) |
+| Duração máxima do clipe | 70s | Opções 1, 2, 3 (soft limit — pode extender até 90s via silêncio) |
 | Nota mínima dos blocos | 70 | Opção 3 apenas |
 | Limiar de silêncio | -30 dB | Opção 2 apenas |
 | Duração mínima do silêncio | 0.4s | Opção 2 apenas |
@@ -225,8 +226,10 @@ volumes:
 | v20.4 | 7 critérios de avaliação combinados em todos os prompts (Gancho, Emoção, Velocidade, Tom, Impacto, Duração/Densidade, Retenção); `retention_score` e `criteria` no `_meta.json` |
 | v20.5 | Critério de velocidade recalibrado: fala lenta intencional (1–1.5 p/s) = 7pts, não penaliza pregação/narração; critério 6 na Opção 3 renomeado para "Densidade de clipes" (não penaliza duração do bloco de 3min) |
 | v20.6 | Campo "Nota mínima dos blocos" configurável no painel (padrão 70); threshold injetado no `rankingCode` via `cfg.minBlockScore` |
-| v20.7 | Corte no fim do raciocínio: `end` pode ultrapassar `maxClip` até completar o pensamento (máx. 180s); filtro de duração atualizado de `MAX_DUR + 15` para `180s`; prompts reforçados para nunca terminar em enumeração ou frase em aberto |
+| v20.7 | Corte no fim do raciocínio: `end` pode ultrapassar `maxClip` até completar o pensamento; prompts reforçados para nunca terminar em enumeração ou frase em aberto |
 | v20.8 | Limite de clipes alterado de "até 5" para "de 5 a 8" em todas as engines e no sysFinal |
+| v20.9 | Extensão mecânica por silêncio: Execute Command roda `silencedetect` nos 30s após o `end` da IA e avança `AEND` até próxima pausa natural; cap `MAXEND = clipStart + 90s` |
+| v20.10 | Cap rígido de 90s (= 1m30s): limite prático de YouTube Shorts para manter impacto; filtro de duração atualizado de `180s` para `90s`; `MAXEND` definido no shell |
 
 ---
 
@@ -241,4 +244,6 @@ volumes:
 - [x] Opção 3 com 2 passes de IA e blocos de 3min — implementado em v20
 - [x] Suporte a OpenAI (`gpt-5.4-mini`) e Gemini — implementado em v20
 - [x] Cortes no fim do raciocínio (não truncar para caber no tempo) — implementado em v20.7
+- [x] Extensão por silêncio pós-corte + cap 90s — implementado em v20.9–v20.10
 - [ ] Validar em produção o motor Ollama local como alternativa gratuita
+- [ ] **AÇÃO NECESSÁRIA**: reimportar o JSON do workflow no n8n — o workflow atual ainda tem o filtro antigo (`dur > 85s`) e sem extensão por silêncio
