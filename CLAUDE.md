@@ -2,9 +2,9 @@
 
 ## O que é este projeto
 
-`n8n-video-silence-cutter.html` — arquivo HTML single-file que gera workflows JSON para o n8n automatizar o corte de YouTube Shorts a partir de vídeos longos (pregações/palestras) armazenados no Google Drive.
+`n8n-video-silence-cutter.html` — arquivo HTML single-file que gera workflows JSON para o n8n automatizar o corte de YouTube Shorts a partir de vídeos longos (pregações/palestras) armazenados no OneDrive.
 
-Fluxo geral: vídeo no GDrive → whisper.cpp (transcrição local, sem pontuação) → IA avalia trechos → FFmpeg corta e redimensiona para 9:16.
+Fluxo geral: vídeo no OneDrive → whisper.cpp (transcrição local, sem pontuação) → IA avalia trechos → FFmpeg corta e redimensiona para 9:16.
 
 Após cada mudança no HTML, o usuário precisa **reimportar o JSON gerado no n8n** — o workflow em produção não se atualiza sozinho.
 
