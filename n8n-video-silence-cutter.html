@@ -1559,18 +1559,14 @@ return results;`;
      parameters:{method:"GET",url:"https://graph.microsoft.com/v1.0/me/drive/root:/"+cfg.onedriveFolder,authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
     {id:"b1",name:"Listar Arquivos",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[380,300],
      parameters:{method:"GET",url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $json.id }}/children",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
-    {id:"b1b",name:"Extrair Itens",type:"n8n-nodes-base.code",typeVersion:2,position:[540,300],
-     parameters:{jsCode:"const items = $json.value || [];\nif (items.length === 0) throw new Error('Pasta vazia');\nreturn items.map(item => ({ json: item }));\n"}},
-    {id:"bF",name:"É Vídeo?",type:"n8n-nodes-base.if",typeVersion:2,position:[680,300],
-     parameters:{conditions:{options:{caseSensitive:false},conditions:[{id:"v1",leftValue:"={{ $json.name }}",rightValue:"\\.(mp4|mkv|webm|mov|avi)$",operator:{type:"string",operation:"regex"}}],combinator:"and"},options:{}}},
-    {id:"bL",name:"Loop Vídeos",type:"n8n-nodes-base.splitInBatches",typeVersion:3,position:[820,300],
-     parameters:{batchSize:1,options:{}}},
+    {id:"b1b",name:"Selecionar Vídeo",type:"n8n-nodes-base.code",typeVersion:2,position:[540,300],
+     parameters:{jsCode:"const items = ($json.value || []).filter(f => /\\.(mp4|mkv|webm|mov|avi)$/i.test(f.name));\nif (items.length === 0) throw new Error('Nenhum video encontrado na pasta');\nreturn [{ json: items[0] }];\n"}},
     {id:"b2",name:"Baixar Vídeo",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[960,300],
      parameters:{resource:"file",operation:"download",fileId:"={{ $json.id }}"}},
     {id:"b3",name:"Salvar na VPS",type:"n8n-nodes-base.writeBinaryFile",typeVersion:1,position:[1100,300],
-     parameters:{fileName:"=/home/node/.n8n-files/{{ $('Loop Vídeos').item.json.name }}",dataPropertyName:"data"}},
+     parameters:{fileName:"=/home/node/.n8n-files/{{ $('Selecionar Vídeo').first().json.name }}",dataPropertyName:"data"}},
     {id:"b4",name:"Preparar Caminhos",type:"n8n-nodes-base.code",typeVersion:2,position:[1280,300],
-     parameters:{jsCode:"const t = $('Loop Vídeos').item.json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: { videoName: t.name, videoPath: base + t.name, audioPath: base + 'audio_full.wav' }}];\n"}},
+     parameters:{jsCode:"const t = $('Selecionar Vídeo').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: { videoName: t.name, videoPath: base + t.name, audioPath: base + 'audio_full.wav' }}];\n"}},
     {id:"b5",name:"FFprobe + Extrair Áudio",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[880,300],
      parameters:{command:'=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{{ $json.videoPath }}") && echo "DURATION:$DUR" && ffmpeg -y -i "{{ $json.videoPath }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"'}},
     {id:"b6",name:"Preparar Whisper Blocos",type:"n8n-nodes-base.code",typeVersion:2,position:[1060,300],
@@ -1636,10 +1632,8 @@ return results;`;
   const connections = {
     "Iniciar Manualmente":{main:[[{node:"Resolver Pasta",type:"main",index:0}]]},
     "Resolver Pasta":{main:[[{node:"Listar Arquivos",type:"main",index:0}]]},
-    "Listar Arquivos":{main:[[{node:"Extrair Itens",type:"main",index:0}]]},
-    "Extrair Itens":{main:[[{node:"É Vídeo?",type:"main",index:0}]]},
-    "É Vídeo?":{main:[[{node:"Loop Vídeos",type:"main",index:0}],[]]},
-    "Loop Vídeos":{main:[[],[{node:"Baixar Vídeo",type:"main",index:0}]]},
+    "Listar Arquivos":{main:[[{node:"Selecionar Vídeo",type:"main",index:0}]]},
+    "Selecionar Vídeo":{main:[[{node:"Baixar Vídeo",type:"main",index:0}]]},
     "Baixar Vídeo":{main:[[{node:"Salvar na VPS",type:"main",index:0}]]},
     "Salvar na VPS":{main:[[{node:"Preparar Caminhos",type:"main",index:0}]]},
     "Preparar Caminhos":{main:[[{node:"FFprobe + Extrair Áudio",type:"main",index:0}]]},
@@ -1667,7 +1661,6 @@ return results;`;
   connections["Ler Metadados do Disco"] = {main:[[{node:"Upload Metadados → OneDrive",type:"main",index:0}]]};
   connections["Upload Metadados → OneDrive"] = {main:[[{node:"Limpar Arquivos do Clipe",type:"main",index:0}]]};
   connections["Limpar Arquivos do Clipe"] = {main:[[{node:"Loop Over Items",type:"main",index:0}]]};
-  connections["Limpar Vídeo Original"] = {main:[[{node:"Loop Vídeos",type:"main",index:0}]]};
 
   const names = {
     claude: "YouTube Shorts — Blocos (Claude × 2 passes + Whisper.cpp local)",
