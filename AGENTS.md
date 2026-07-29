@@ -1,0 +1,823 @@
+# n8n Shorts Generator — Contexto do Projeto
+
+## O que é este projeto
+
+`n8n-video-silence-cutter.html` — arquivo HTML single-file que gera workflows JSON para o n8n automatizar o corte de YouTube Shorts a partir de vídeos longos (pregações/palestras) armazenados no OneDrive.
+
+Fluxo geral: vídeo no OneDrive → whisper.cpp (transcrição local, sem pontuação) → IA avalia trechos → FFmpeg corta e redimensiona para 9:16.
+
+Após cada mudança no HTML, o usuário precisa **reimportar o JSON gerado no n8n** — o workflow em produção não se atualiza sozinho.
+
+---
+
+## Estado atual (julho/2026)
+
+**Única opção em uso: Opção 3 (Blocos).** As Opções 1 (Semântico) e 2 (Simples) não estão sendo usadas e não precisam ser mantidas.
+
+**Legendas desabilitadas (08/07/2026):** a pedido do usuário, o pipeline não queima mais legendas nos clipes finais. Ver seção "Legendas — desabilitadas" abaixo para detalhes técnicos da mudança.
+
+**Primeira validação real do fix de checklist de janelas (08/07/2026) — execução #15, sucesso parcial:** rodou o vídeo "Quem é você depois do culto? — 14/06/2026" pela primeira vez com o checklist de 6 janelas + sem legenda. 6 clipes foram cortados com sucesso e os timestamps confirmam que o viés de atenção foi corrigido: clip 1 em 145–213s, clip 2 em 340–411s, clip 3 em 1170–1259s (quase 20min) — bem distribuídos ao longo do vídeo, não mais concentrados nos primeiros minutos. **O fix do checklist parece estar funcionando.** Ainda não confirmado se os cortes mid-reasoning (bug histórico prioritário) desapareceram — precisa assistir os clipes.
+
+**Novo bug encontrado nesta execução — 504 Gateway Timeout no upload (08/07/2026):** no upload do 6º clipe (31.7MB) para o OneDrive, a Microsoft Graph API retornou `504 Gateway timed out` após 42.6s de tentativa. Os 5 clipes anteriores (20.9–34.1MB) fizeram upload normalmente em 14–18s cada, então não é um problema de tamanho de arquivo — é uma falha transitória do lado da Microsoft (comum em uploads grandes sequenciais, possívelmente throttling). **Fix aplicado:** habilitado `retryOnFail` (5 tentativas, 5s de espera entre elas) nos nodes "Upload Short → OneDrive" e "Upload Metadados → OneDrive", e também em "Baixar Vídeo" (3 tentativas) por prevenção — essas são as três chamadas de rede mais pesadas do workflow e as mais suscetíveis a timeouts transitórios do OneDrive. Aplicado via `update_workflow` (operação `setNodeSettings`) diretamente no workflow `ID4wisnN4Tqpt2zh` e retroportado para `n8n-video-silence-cutter.html` e `workflow-blocos.json` (campos `retryOnFail`/`maxTries`/`waitBetweenTries` a nível de node).
+
+Para recuperar a execução #15 sem reprocessar o vídeo inteiro (2h+ de whisper.cpp + IA), a opção mais rápida é usar o botão "Retry" na lista de execuções do n8n — ele reaproveita os dados já processados e tenta de novo só a partir do node que falhou.
+
+**Bug do arquivo 0 bytes / "moov atom not found" (09/07/2026):** vídeo baixado do OneDrive com 0 bytes porque ainda estava sincronizando quando o workflow rodou — o FFmpeg reportava erro de container corrompido, mas a causa real era um arquivo vazio. Corrigido com validação de tamanho mínimo (1MB) no node "Selecionar Vídeo", nos três lugares. Ver seção "Bug corrigido — moov atom not found" abaixo.
+
+**minBlockScore reduzido de 70 para 40 (09/07/2026):** após o fix acima, o vídeo "Fique Atento à Oportunidade || Culto Ao Vivo - 30/06/2026" processou corretamente (824MB, 45:53min, 4K) mas nenhum dos 8 blocos atingiu a nota mínima de 70 — validado que é conteúdo legítimo (culto completo com ~21min de leitura bíblica/repetição + só ~24min de ensino real, notas 44 e 57 no máximo). Threshold baixado para 40 como novo padrão, nos três lugares, a pedido explícito do usuário. Ver seção "minBlockScore reduzido de 70 para 40" abaixo. **Ainda não testado com reexecução real após a mudança.**
+
+**Último run bem-sucedido:** vídeo "Quem é você depois do culto? — 14/06/2026 | Pr. Claudio Silva"
+- 6 clipes gerados, gaps ≥ 20s entre todos (zero clipes contíguos)
+- Scores: 89–95
+- **Problema identificado:** cortes acontecem no meio do raciocínio — o pregador para por um instante (respiração) e a IA interpreta como fim de pensamento
+
+**Fix aplicado em 06/07/2026 (aguardando validação com vídeo real):** implementada a abordagem #1 do bug de cortes mid-reasoning — PASSO 0 de pré-processamento do SRT (node "Mesclar Pausas Curtas"). Ver seção "Bug pendente" abaixo para detalhes e o que ainda falta testar.
+
+**Fix aplicado em 07/07/2026 (aguardando validação com vídeo real):** checklist obrigatório de cobertura por janelas de tempo no PASSO 1/PASSO 2 do `sysFinal`, para corrigir um bug real de clustering (a IA concentrou 8 clipes nos primeiros 132.6s de um vídeo de 2529.6s — 42 minutos). Ver seção "Bug pendente" para detalhes. Este fix foi aplicado **diretamente no n8n via MCP** (workflow `ID4wisnN4Tqpt2zh`) e também retroportado para `n8n-video-silence-cutter.html` e `workflow-blocos.json`.
+
+**Conexão MCP com n8n (07/07/2026):** o usuário conectou o n8n via MCP nesta sessão, permitindo que as mudanças sejam aplicadas diretamente no workflow em produção (`update_workflow`), sem precisar reimportar o JSON manualmente. Ver seção "Conexão MCP com n8n" abaixo para detalhes operacionais e um incidente de workflow duplicado que foi descoberto e resolvido.
+
+**Trava de execução sequencial (13/07/2026):** disparei a execução #26 (vídeo Rodnei Romano, com o filtro de fase novo) para validação, e o usuário disparou uma execução #27 quase ao mesmo tempo com um segundo vídeo diferente. As duas ficaram "running" por 17+ horas sem completar nem o primeiro node — sintoma de 2 processos whisper.cpp `large-v3` brigando pelos mesmos 6 núcleos da VPS (cada execução roda com `-t 6`, então 2 simultâneas tentam usar 12 threads onde só cabem 6). O usuário cancelou uma execução manualmente e pediu uma trava para impedir isso de acontecer de novo. Implementado um lock de arquivo (`/home/node/.n8n-files/.processing.lock`) com expiração automática de 8h (para não travar para sempre se uma execução falhar sem limpar o lock) entre "Selecionar Vídeo" e "Baixar Vídeo". Ver seção "Trava de execução sequencial — 2 vídeos competindo pela VPS" abaixo para detalhes técnicos.
+
+**Bug corrigido — crash de memória (OOM) no download do vídeo (13/07/2026):** com a trava já ativa, disparei a execução #29 (1 vídeo por vez). Ela avançou normalmente pelos nodes iniciais mas crashou no node "Baixar Vídeo" com `NodeCrashedError` — "n8n may have run out of memory". Causa: o node nativo do n8n para OneDrive (`microsoftOneDrive`, operação `download`) baixa o arquivo inteiro para a memória do processo Node.js antes de gravar em disco — os dois vídeos candidatos nesta pasta têm **10.07GiB e 7.82GiB** (4K, bitrate ~22.8Mbps, praticamente footage bruta de câmera — bem maiores que os 3.2GB estimados antes), o que estoura a memória disponível independente de quanta RAM a VPS tem no total. Fix: os dois nodes "Baixar Vídeo" (OneDrive) + "Salvar na VPS" (write binary file) foram substituídos por um único node Execute Command que baixa via streaming direto para o disco usando a URL de download direta do Graph API (campo `@microsoft.graph.downloadUrl`, já presente na resposta de "Listar Arquivos"/"Selecionar Vídeo") — sem nunca carregar o conteúdo na memória do n8n. Esse padrão já era usado no resto do pipeline (ffmpeg, whisper.cpp rodam via Execute Command, não via nodes nativos com binary data) — essa mudança só estende a mesma abordagem para o download.
+
+**Correção adicional — curl não existe na VPS, trocado por wget (13/07/2026):** a primeira versão do fix acima usava `curl`, e a execução #32 falhou imediatamente com `/bin/sh: curl: not found`. Diagnóstico via node temporário (técnica descrita na seção "Conexão MCP com n8n" abaixo) rodando `cat /etc/os-release` + `which curl/wget/python3/node/aria2c`: a VPS roda **"Docker Hardened Images" (Alpine) v3.24**, uma imagem minimalista/hardened que não inclui `curl`, `python3` nem `aria2c` — só `wget` (`/usr/bin/wget`) e `node` (`/usr/local/bin/node`). Fix: comando reescrito para `wget -q --tries=5 --waitretry=10 -O <destino> <url>` (equivalente ao `curl -L --fail --retry 5 --retry-delay 10 --retry-connrefused -o`), mantendo a mesma validação de tamanho mínimo (1MB) depois do download. Aplicado nos três lugares (n8n via MCP, HTML, `workflow-blocos.json`), com `retryOnFail`/`maxTries:3`/`waitBetweenTries:5000` preservados a nível de node (camada de retry extra do próprio n8n, além dos `--tries` internos do wget).
+
+**Lição para o futuro:** esta VPS é uma imagem Alpine hardened, não uma distro completa (Debian/Ubuntu) — qualquer novo comando via Execute Command deve assumir só as ferramentas mínimas do Alpine (`sh`, `wget`, coreutils básicos) e não binários comuns como `curl`, `python3`, `bash` (o shell é `/bin/sh`, não bash — evitar sintaxe bash-only tipo `[[ ]]` ou arrays).
+
+**Execução #35 — trava e wget validados, novo bug encontrado no scoring de blocos (13/07/2026):** disparada às 14:15:11 UTC, rodou por 3h48min (até 18:03:39 UTC) processando o vídeo "Culto Ao Vivo - 07/07/2026 | Pr. Rodnei Romano.mp4" (3751s/~62min) — passou por download (wget), whisper.cpp e divisão em blocos sem nenhum erro, confirmando que os fixes de trava sequencial e memória/wget funcionam de ponta a ponta. Falhou no node "Ranking dos Blocos" com `Nenhum bloco atingiu nota minima de 40` — todos os 18 blocos vieram com nota 5. Ver seção "Bug corrigido — IA zerava criteria e aplicava nota-teto de exclusão a blocos de pregação real" abaixo para a causa raiz e o fix.
+
+**Bug do teto de 180s ignorado pela IA (12/07/2026):** vídeo "Não é o Fim, é o Crescimento || Culto Ao Vivo - 07/07/2026 | Pr. Rodnei Romano" (7725s/128:45min) travou no "Montar Clipes" com zero clipes aprovados. Causa: o prompt `sysFinal` dizia à IA "sem teto fixo — capture o raciocínio completo" no PASSO 2, mas o código sempre teve um teto rígido de 180s (`dur > 180` descarta o clipe). Os 8 clipes retornados pela IA tinham 232–382s cada — todos acima do limite, todos descartados. Fix: prompt agora informa o teto de 180s explicitamente (PASSO 2, DURAÇÃO IDEAL e REGRAS INEGOCIÁVEIS) e instrui a IA a escolher um ponto de conclusão intermediário dentro do teto em vez de tentar capturar o raciocínio inteiro. Mensagem de erro do "Montar Clipes" também foi melhorada para diagnosticar a causa real (teto excedido vs. clustering vs. formato de timestamp) em vez de um texto genérico. Ver seção "Bug corrigido — teto de 180s ignorado pela IA" abaixo. **Ainda não testado com reexecução real após o fix.**
+
+**Filtro de fase do culto — só cortar "a palavra" (12/07/2026):** a pedido explícito do usuário ("ignorar a abertura do culto, dízimo e oferta e apresentação, pegar somente a palavra para gerar os cortes"), os dois prompts de IA da Opção 3 agora excluem estruturalmente qualquer trecho de abertura/boas-vindas, avisos/recados, apelo de dízimos e ofertas, e louvor/música — só a pregação/mensagem principal pode virar clipe. Ver seção "Filtro de fase do culto — abertura/dízimo/avisos excluídos" abaixo para detalhes técnicos.
+
+**Validação do filtro de fase com execução real (12/07/2026):** analisando a execução #25 (concluída 18:42, ANTES do filtro de fase — rodou só com o fix de teto de 180s), confirmado com dados reais que o problema é exatamente o que o usuário descreveu: dos 3 clipes que sobreviveram aos filtros de código e foram upados para o OneDrive, 2 de 3 (66%) eram conteúdo de louvor/abertura, não pregação — `melhor-lugar-presenca` (30–69.6s, hook: "Aleluia, eu não sei você, mas eu vim aqui somente para adorar a Ele") e `adoracao-verdadeira-transborda` (230–311.7s, sobre "adoração verdadeira"). Só o 3º clipe (`terceiro-poco-alargamento`, aos 6215s, ~80% do vídeo) era pregação de fato. Ver seção "Validação do filtro de fase — execução #25 vs #26" abaixo para a análise completa, incluindo um achado secundário sobre compliance parcial do teto de 180s pela IA. Execução #26 disparada no mesmo vídeo com os prompts corrigidos, para comparação direta — resultado ainda pendente (execução real leva ~5h neste vídeo de 128min).
+
+**Fallback do Ranking dos Blocos validado com sucesso — execução #51 (14/07/2026):** após 3 falhas consecutivas do bug de scoring degenerado (execuções #35, #42, #47), o fix estrutural que torna o "Ranking dos Blocos" consultivo em vez de bloqueante (ver seção "Terceira falha consecutiva" abaixo) foi validado: a execução #51 completou o pipeline inteiro com sucesso, com scores desta vez genuinamente diferenciados (52/57/54/49 para pregação real, 4 para um trecho de louvor). 7 clipes gerados e enviados ao OneDrive. Ver seção "Execução #51" abaixo para detalhes, incluindo a questão em aberto sobre o reencode 1080p do vídeo processado.
+
+**Bug corrigido — `_meta.json` nunca era gerado de verdade, desde 08/07/2026 (16/07/2026):** a pedido do usuário ("o meta dados não está sendo gerado no final"), investigação revelou que a pasta de saída no OneDrive nunca teve arquivos `.json` — só `.mp4`. Causa: o node "Upload Metadados → OneDrive" não respeita o parâmetro `fileName` configurado e sempre usa o nome do arquivo LOCAL (`clip_XX_meta.json`, genérico, igual para todo vídeo), fazendo cada execução sobrescrever os mesmos ~8 arquivos criados em 08–09/07. Fix: o nome local do arquivo de metadados agora usa o mesmo padrão final do vídeo (`short_XX_slug_meta.json`), corrigindo o problema independente do node respeitar ou não o parâmetro `fileName`. Ver seção "Bug corrigido — metadados nunca eram gerados de verdade" abaixo.
+
+**Modelo whisper.cpp trocado para large-v3-turbo (16/07/2026):** a pedido do usuário ("tem alguma coisa mais rapido... pode trocar para large-v3-turbo"), o modelo de transcrição foi trocado de `ggml-large-v3.bin` para `ggml-large-v3-turbo.bin` — mesma arquitetura de encoder (32 camadas, preserva a maior parte da precisão), decoder reduzido de 32→4 camadas, ganho esperado de ~6-8x em velocidade. Descoberta no processo: `/models/` na VPS pertence a `root` e não é gravável pelo usuário `node` que roda o n8n — o modelo novo foi baixado com sucesso para `/home/node/.n8n-files/ggml-large-v3-turbo.bin` (pasta já usada e gravável pelo pipeline) em vez de `/models/`, e o comando do whisper foi apontado para esse novo caminho. Aplicado nos três lugares. Ver seção "Troca de modelo whisper.cpp — large-v3 → large-v3-turbo" abaixo. **Ainda não testado com uma execução real** — falta confirmar tempo de transcrição e qualidade em produção.
+
+**Fila automática de vídeos — loop sequencial + arquivamento (14/07/2026):** a pedido do usuário ("identifique todos os videos que estão na pasta e roda sequencialmente... quando terminar mover para a pasta Videos-Cortes\Videos"), implementado um mecanismo de self-chaining: ao final de cada execução bem-sucedida, o workflow move o vídeo original processado para `Videos-Cortes/Videos`, relista a pasta de entrada e — se sobrar algum vídeo elegível — dispara automaticamente uma nova execução de si mesmo (assíncrona, `waitForSubWorkflow:false`) para o próximo vídeo, encadeando até a fila esvaziar. Aplicado nos três lugares. Ver seção "Fila automática — loop sequencial + arquivamento de vídeos processados" abaixo para detalhes técnicos, incluindo uma pegadinha de credenciais do MCP do n8n e uma descoberta sobre a organização real das pastas do usuário. **Ainda não testado com uma execução real do loop completo** — a pasta raiz está sem vídeos elegíveis no momento (por escolha do usuário, que preferiu não mover o vídeo do Pr. Daniel dos Santos de volta para a raiz).
+
+---
+
+## Arquitetura: 3 opções de workflow
+
+| Opção | Nome | Pipeline | Status |
+|-------|------|----------|--------|
+| **Opção 1** | Semântico | whisper.cpp → IA → Montar Clipes → FFmpeg | Não usada |
+| **Opção 2** | Simples | FFmpeg `silencedetect` only, sem IA | Não usada |
+| **Opção 3** | Blocos (2 passes) | whisper.cpp → IA score blocos 3min → IA seleção final → Montar Clipes → FFmpeg | **Em uso** |
+
+As 3 opções são geradas por funções separadas no `<script>`: `buildSimpleWorkflow()`, `buildSemanticWorkflow()`, `buildBlockWorkflow()`.
+
+---
+
+## Estrutura do código (dentro do `<script>`)
+
+```
+cfg {}                        ← configuração do usuário (lida do HTML pelo updateCfg())
+buildSimpleWorkflow()         ← Opção 2 (não usada)
+buildSemanticWorkflow()       ← Opção 1 (não usada)
+buildBlockWorkflow()          ← Opção 3 (EM USO)
+```
+
+Cada função monta um array `nodes[]` e retorna o JSON do workflow n8n.
+
+### Parâmetros de cfg relevantes
+
+| Variável | Default | Descrição |
+|----------|---------|-----------|
+| `cfg.minClip` (`MIN`) | 30 | Duração mínima do clipe (s) |
+| `cfg.maxClip` (`MAX`) | 70 | Duração alvo/preferida do clipe (s) — usada nos prompts de IA |
+| `cfg.minBlockScore` | 70 | Score mínimo para bloco passar na Opção 3 (40–55 para sermões lentos) |
+| `cfg.noiseDb` | -30 | Threshold de ruído para `silencedetect` (dB) |
+| `cfg.minSilence` | 0.4 | Duração mínima de silêncio detectado (s) |
+| `cfg.margin` | 0.15 | Margem de segurança nos cortes (s) |
+
+**Engine padrão:** `openai` (pré-selecionado na UI). Modelo: `gpt-5.4-mini`. Chave hardcoded no campo `openai-key` do HTML.
+
+**VPS (atualizado 06/07/2026):** upgrade para 6 núcleos / 18GB RAM. Mudanças aplicadas no whisper.cpp em função disso:
+- Modelo trocado de `ggml-small.bin` para `ggml-large-v3.bin` (~4-5GB RAM, cabe com folga nos 18GB) — maior precisão de transcrição, o que ajuda também o bug de cortes mid-reasoning (menos erros de reconhecimento = pontos de pausa mais confiáveis no PASSO 0/1).
+- Flag `-t 6` adicionada às duas chamadas de whisper.cpp (transcrição completa e transcrição por clipe) — antes rodava sem flag de threads (default do whisper.cpp, tipicamente 4), deixando 2 núcleos ociosos.
+- FFmpeg não precisou de ajuste: já detecta e usa todos os núcleos disponíveis automaticamente (sem flag `-threads` explícita no código).
+- **Pré-requisito no servidor:** o arquivo `ggml-large-v3.bin` precisa existir em `/models/` na VPS antes de rodar — se não tiver sido baixado ainda, o comando `whisper` vai falhar com "model not found". Baixar de https://huggingface.co/ggerganov/whisper.cpp/tree/main (ou via `bash models/download-ggml-model.sh large-v3` no repo do whisper.cpp).
+- Impacto esperado no tempo de transcrição: `large-v3` é mais lento que `small` por natureza (modelo maior), mas com 6 threads dedicados o tempo total deve ficar próximo ou melhor que o `small` rodando sem `-t` antes.
+
+---
+
+## Bug pendente — cortes no meio do raciocínio
+
+**Problema confirmado em produção (julho/2026):** ao assistir os clipes gerados, os cortes acontecem no meio de um raciocínio em andamento. O pregador faz uma pausa breve (respiração, ênfase) e o clipe termina ali, mesmo que o pensamento não esteja concluído.
+
+**Causa raiz:**
+1. whisper.cpp segmenta o áudio em blocos de 3–10s, colocando quebras nos gaps de áudio — inclusive pausas de respiração de 0.1–0.3s
+2. O PASSO 1 pede "pontos de conclusão", mas a IA tende a usar as quebras de segmento SRT (que parecem conclusões visualmente no texto) como proxy
+3. Sem pontuação na transcrição, a IA não consegue distinguir "pausa entre vírgulas" de "pausa entre parágrafos"
+4. O `silencePrefix` FFmpeg estende o END até o próximo silêncio de 0.3s — mas se o pregador só fez uma pausa de respiro, o corte continua errado (só é deslocado alguns frames)
+
+**O que já foi tentado sem sucesso:**
+- PASSO 1 com instrução de "15–25 pontos de conclusão real" — a IA ainda escolhe pausas de respiro
+- Instrução de "NUNCA em enumeração, vírgula ou conjunção" — não resolve sem pontuação real
+- `silencePrefix` com `duration=0.3` e janela de 92s — estende o end, mas não corrige o ponto errado
+
+**Fix implementado em 06/07/2026 — PASSO 0 (abordagem #1 escolhida):**
+
+Em vez de pedir para a IA calcular gaps manualmente a partir do texto SRT bruto (frágil — a IA lê números, não faz aritmética confiável em contexto longo), o pré-processamento agora acontece em código, antes de qualquer IA ver a transcrição:
+
+- Novo Code node **"Mesclar Pausas Curtas"**, inserido entre `Whisper.cpp Transcrever` e `Dividir em Blocos`.
+- Lê o SRT bruto, calcula o gap entre o fim de cada bloco e o início do próximo. Se `gap < 0.5s` (respiração), mescla os dois blocos em um só (concatena texto, estende o fim). Se `gap >= 0.5s`, mantém como blocos separados.
+- Resultado: o SRT que chega ao PASSO 1/PASSO 2 (`sysFinal`) só tem quebras de bloco onde já existe uma pausa real (≥0.5s) — **por construção**, não por instrução de prompt.
+- O prompt `sysFinal` (PASSO 1) foi reescrito para informar a IA que o SRT já vem pré-processado: ela não precisa mais calcular gaps, só decidir se o fim de um bloco também fecha um raciocínio (ainda existem pausas reais no meio de enumerações/vírgulas faladas, então esse filtro semântico continua necessário).
+- Testado localmente com SRT simulado (respirações de 0.15–0.2s + pausas reais de 0.8–0.9s): merge funcionou corretamente, preservando as pausas reais como limites de bloco e absorvendo as respirações no texto do bloco anterior.
+- JSON gerado e sintaxe de todos os Code nodes validada com harness Node (fora do browser) antes da entrega.
+
+**Ainda não testado com vídeo real** — validar no próximo run se os cortes mid-reasoning realmente desaparecem. Se persistir, seguir para as abordagens #2 e #3 abaixo.
+
+**Novo bug encontrado no primeiro teste pós-fix (06/07/2026):** o "Montar Clipes" retornou vazio sem nenhum erro visível. Resposta bruta do `GPT — Seleção Final` continha 6 clipes válidos, mas todos com timestamps concentrados entre 6.2 e 62.5 (unidade ambígua) — ao aplicar a salvaguarda ×60 (trata como minutos decimais), as durações resultantes ficaram entre 270–708s, todas acima do teto de 180s, e o filtro descartou os 6 silenciosamente. Causa provável: a IA não espalhou os pontos de conclusão do PASSO 1 ao longo de todo o vídeo — se comportou como se só tivesse lido um trecho pequeno perto do início.
+
+**Dois fixes aplicados nesta rodada:**
+1. **Âncora de duração no prompt:** o `userContent` enviado ao `GPT — Seleção Final` agora começa com "DURAÇÃO TOTAL DO VÍDEO: X segundos (~Y minutos)" e instrui explicitamente a IA a distribuir os pontos de conclusão por todo esse intervalo, não só no início. Reforço equivalente adicionado ao PASSO 1 do `sysFinal`.
+2. **Erro explícito no "Montar Clipes":** quando `results.length === 0`, o node agora lança um `throw new Error(...)` com os clipes brutos retornados pela IA (start/end/duração) e a duração real do vídeo — em vez de retornar `[]` silenciosamente. Isso torna o problema visível na execução do n8n com dados suficientes para diagnosticar na hora.
+
+**Nova evidência real (07/07/2026) — a âncora de duração sozinha NÃO foi suficiente:** com o throw explícito em produção, apareceu um novo caso real: a IA retornou 8 clipes válidos (nenhum problema de unidade — a salvaguarda ×60 corretamente NÃO disparou), mas todos os 8 clipes estavam concentrados nos primeiros **132.6 segundos de um vídeo de 2529.6s** (42 minutos). Ou seja, a IA leu só ~5% do vídeo e nem tentou cobrir o resto, apesar da instrução textual "distribua ao longo de todo o vídeo, não concentre no início" já estar no prompt. Isso confirma que o problema é um viés de atenção da IA em transcrições longas (ela tende a "esgotar" o orçamento de raciocínio nos primeiros parágrafos do texto), não um bug de unidades — instrução solta em prosa não é suficiente para forçar cobertura.
+
+**Fix mais forte aplicado em 07/07/2026 — checklist obrigatório de janelas de tempo:**
+
+Em vez de pedir "distribua ao longo do vídeo" em prosa (que a IA ignorou), o `userContent` agora **calcula programaticamente** (em JS, não em prompt) `N_BUCKETS = 6` janelas de tempo iguais cobrindo a duração total do vídeo, e apresenta um checklist explícito no início da mensagem do tipo:
+
+```
+CHECKLIST OBRIGATÓRIO DE COBERTURA: o vídeo foi dividido em 6 janelas de tempo iguais.
+Antes de finalizar o PASSO 1, você DEVE ter pelo menos 2 pontos de conclusão em CADA
+uma das janelas abaixo. Se alguma janela estiver vazia, volte e releia essa parte da
+transcrição SRT completa antes de responder — isso não é opcional:
+1. 0s–421s — pelo menos 2 pontos de conclusão aqui
+2. 421s–843s — pelo menos 2 pontos de conclusão aqui
+... (6 janelas)
+```
+
+Mudanças no `sys` do `Preparar GPT — Seleção Final`:
+- PASSO 1 agora referencia explicitamente o checklist e instrui a IA a "PARAR e reler o restante da transcrição" se notar que todos os pontos estão numa janela pequena — não é mais uma sugestão, é uma instrução de fluxo (stop-and-check).
+- PASSO 2 ganhou uma nova regra (e): os clipes finais devem vir de **pelo menos 4 janelas diferentes** do checklist — não apenas ter pontos de conclusão espalhados, mas também garantir que os clipes *selecionados* não fiquem todos amontoados no início.
+- REGRAS INEGOCIÁVEIS ganhou uma linha explícita reforçando a obrigatoriedade do checklist.
+
+O número de janelas (`N_BUCKETS = 6`) e o tamanho de cada uma são calculados dinamicamente a partir de `$json.duration` — funciona igual para um vídeo de 10 minutos ou de 2 horas, sempre dividindo em 6 partes iguais.
+
+**Aplicado em três lugares nesta sessão:** (1) diretamente no workflow do n8n via MCP (`ID4wisnN4Tqpt2zh`, node "Preparar GPT — Seleção Final", operação `updateNodeParameters`), (2) em `n8n-video-silence-cutter.html` (função `buildBlockWorkflow`, dentro do `userExpr` passado para `makeAiNode` do node final), (3) em `workflow-blocos.json` (JSON estático, mesmo conteúdo do node atualizado).
+
+**Ainda não testado com vídeo real.** Validar no próximo run se os 8 clipes (ou quantos forem retornados) agora cobrem pelo menos 4 das 6 janelas do vídeo.
+
+**Abordagens que ainda podem ser exploradas se o checklist de janelas não for suficiente:**
+
+2. ~~Instrução explícita de gap SRT no PASSO 1~~ — superada pelo PASSO 0 (a IA não precisa mais calcular gaps).
+
+3. **PASSO 3 — verificação de cada clip END:** após selecionar os clipes, a IA verifica cada `end` perguntando "o que vem imediatamente depois deste timestamp? Se é continuação do mesmo raciocínio, avance o end para o próximo ponto de conclusão do PASSO 1."
+
+4. **Aumentar `duration` do whisper.cpp** de 0.3s para 0.8s no silencedetect do silencePrefix — menos extensões falsas.
+
+5. **Dividir a chamada final em N sub-chamadas por janela** (uma chamada de IA por bucket de tempo, cada uma vendo só o trecho do SRT daquela janela) — mais caro (mais chamadas de API) mas elimina de vez o viés de atenção, pois a IA fisicamente não teria acesso ao resto do texto para "esquecer". Só vale a pena explorar se o checklist de janelas (fix atual) ainda falhar.
+
+---
+
+## minBlockScore reduzido de 70 para 40 (09/07/2026)
+
+**Contexto:** após o fix do arquivo 0 bytes (ver seção abaixo), o vídeo "Fique Atento à Oportunidade || Culto Ao Vivo - 30/06/2026" baixou e processou corretamente (824MB, 45:53min, 4K/AV01), mas o pipeline parou no "Ranking dos Blocos" com `Nenhum bloco atingiu nota minima de 70. Notas: 8:57, 1:52, 7:44, 6:10, 2:9, 3:9, 4:9, 5:9`.
+
+**Validação do vídeo vs. o erro:** diagnosticado via `get_execution` (nodes "GPT — Analisar Blocos" e "Dividir em Blocos"). O vídeo é um **culto ao vivo completo** (45:53min), não um recorte de pregação isolado. Os 8 blocos e seus horários:
+
+| Bloco | Intervalo | Score | Conteúdo (segundo a razão da IA) |
+|-------|-----------|-------|-----------------------------------|
+| 1 | 0:00–5:53 | 52 | Leitura bíblica + louvor |
+| 2 | 5:53–8:53 | 9 | "Extremamente repetitivo, sem gancho novo" |
+| 3 | 8:53–11:53 | 9 | Mesma repetição |
+| 4 | 11:53–14:53 | 9 | Mesma repetição |
+| 5 | 14:53–18:23 | 9 | Mesma repetição |
+| 6 | 18:23–21:23 | 10 | Repetitivo, mas já aponta para o tema de Bartimeu |
+| 7 | 21:23–25:57 | 44 | Clamor, repreensão, revelação de Jesus como Rei da Glória |
+| 8 | 25:57–45:53 | 57 | Parte mais forte: confronto, urgência, aplicação prática |
+
+Os primeiros ~21 minutos (blocos 1–6) são leitura bíblica + um trecho longo e altamente repetitivo (provável clamor/declaração repetida em estilo de guerra espiritual referenciando Bartimeu) — pouco aproveitável para Shorts, e a IA pontuou isso corretamente perto de zero. Só os últimos ~24 minutos (blocos 7–8) têm conteúdo de ensino de fato, mas mesmo assim ficaram abaixo do limiar de 70 (`minBlockScore` default). **Conclusão: não é um bug — a IA avaliou o conteúdo corretamente, mas o threshold de 70 é alto demais para o perfil típico dos vídeos deste projeto (cultos completos, não só pregações isoladas).**
+
+**Observação secundária (não corrigida, só registrada):** o bloco 8 tem duração de quase 20 minutos (1557–2753s) em vez do alvo de ~3min — provavelmente porque, nesse trecho, o pregador fala quase sem pausas ≥0.5s, então o PASSO 0 ("Mesclar Pausas Curtas") e a lógica de `Dividir em Blocos` (`seg.e - bs >= BLOCK`) acabam produzindo um único bloco gigante em vez de vários blocos de 3min. Isso reduz a granularidade da pontuação nessa região, mas não impede a 2ª IA de escolher pontos de corte precisos dentro do bloco (ela recebe o SRT completo, não só o resumo do bloco). Vale observar se isso se repete em outros vídeos com estilo de fala mais contínuo.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`), com confirmação explícita do usuário:** `minBlockScore` default baixado de **70 para 40**. Isso agora deixa passar blocos como o 7 (44) e o 8 (57) para o 2º passo de seleção final, em vez de travar o pipeline inteiro. Esse novo default vale para todos os vídeos processados a partir de agora, não só este — o usuário escolheu essa opção sabendo que já era a recomendação documentada anteriormente ("reduza para 40–55 em sermões, palestras ou narração lenta") e decidiu torná-la o padrão em vez de um ajuste manual por vídeo.
+
+**Ainda não testado com uma reexecução real após a mudança de threshold** — falta confirmar se os blocos 7–8 realmente produzem clipes finais de boa qualidade quando alimentados à 2ª IA.
+
+---
+
+## Bug corrigido — teto de 180s ignorado pela IA (12/07/2026)
+
+**Sintoma:** o node "Montar Clipes" travou com zero clipes aprovados, throw de erro, para o vídeo "Não é o Fim, é o Crescimento || Culto Ao Vivo - 07/07/2026 | Pr. Rodnei Romano" (7725.05s / ~128:45min). A mensagem de erro da época (genérica) dizia como causa provável "a IA concentrou os pontos de conclusao numa janela pequena... ou os timestamps nao estao no formato esperado" — nenhuma das duas era a causa real.
+
+**Diagnóstico:** via `get_execution` na execução, os 8 clipes brutos retornados pela IA (em segundos, já corretos) eram:
+
+| Clipe | Start | End | Duração |
+|-------|-------|-----|---------|
+| 1 | 49.44 | 341.72 | 292s |
+| 2 | 230.00 | 545.80 | 316s |
+| 3 | 3557.40 | 3860.00 | 303s |
+| 4 | 3868.00 | 4100.00 | 232s |
+| 5 | 4180.00 | 4460.00 | 280s |
+| 6 | 4468.00 | 4750.00 | 282s |
+| 7 | 4758.00 | 5010.00 | 252s |
+| 8 | 5819.00 | 6201.00 | 382s |
+
+Os timestamps estavam corretos (em segundos totais, sem erro de unidade) e razoavelmente bem distribuídos ao longo do vídeo (0 a 6201s, ~80% da duração total) — ou seja, **não havia bug de clustering nem de formato**. A causa real: todas as 8 durações (232–382s) excedem o filtro `dur > 180` do código em "Montar Clipes", que descarta silenciosamente qualquer clipe acima de 180s (3 minutos, teto técnico do YouTube Shorts). Nenhum clipe sobrou → `results.length === 0` → throw.
+
+**Causa raiz — mismatch entre prompt e código:** o prompt `sysFinal` (node "Preparar GPT — Seleção Final") dizia explicitamente à IA, na regra de DURAÇÃO IDEAL e na regra (b) do PASSO 2: *"se o raciocínio não couber em 70s, avance o 'end' até completar o pensamento — **sem limite rígido: capture o raciocínio completo**"*. Ou seja, o próprio prompt instruía a IA a ignorar qualquer teto de duração, enquanto o código sempre teve um teto rígido de 180s. A IA fez exatamente o que foi instruída — seguiu o raciocínio do pregador até a conclusão natural, sem se preocupar com 180s, porque ninguém tinha dito a ela que esse limite existia.
+
+**Por que não apareceu antes:** vídeos mais curtos ou com pregadores que fazem pausas de conclusão mais frequentes tendem a gerar naturalmente clipes abaixo de 180s, mesmo sem a IA saber do teto. Esse vídeo específico (Pr. Rodnei Romano) parece ter blocos de raciocínio mais longos e contínuos, expondo o mismatch que já existia silenciosamente no prompt desde antes desta sessão.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):**
+1. **Prompt `sysFinal` reescrito** em três pontos: (a) regra 6 DURAÇÃO IDEAL agora informa o "TETO ABSOLUTO E INEGOCIÁVEL: 180 segundos" e instrui a IA a escolher um ponto de conclusão intermediário real dentro do teto quando o raciocínio completo for mais longo, em vez de tentar capturar tudo; (b) PASSO 1 ganhou uma instrução para procurar ativamente por pontos de conclusão intermediários a cada 40–180s (não só no fechamento final do argumento), garantindo que sempre exista uma opção de `end` válida dentro do teto; (c) PASSO 2 regra (b) agora diz que o `end` deve cair "ENTRE start+40s E start+180s (nunca antes, nunca depois)", e regra (c) foi reforçada para nunca escolher um `end` acima de start+180s; (d) REGRAS INEGOCIÁVEIS ganhou uma linha dedicada e explícita sobre o teto de 180s.
+2. **Mensagem de erro do "Montar Clipes" melhorada:** antes, o throw sempre citava o mesmo texto genérico ("concentrou numa janela pequena ou formato errado"), mesmo quando a causa real era outra. Agora o código calcula, a partir dos clipes brutos retornados pela IA: quantos excedem 180s, quantos ficam abaixo da duração mínima, se os timestamps parecem estar em minutos (salvaguarda ×60), e o intervalo (span) coberto pelos clipes — e escolhe a mensagem de "causa provável" que efetivamente bate com os dados daquela execução, em vez de um texto fixo. Isso deve tornar diagnósticos futuros mais rápidos (esta investigação levou vários passos de `get_execution` + cálculo manual para chegar à causa real).
+
+**Ainda não testado com uma reexecução real após o fix** — falta rodar novamente o vídeo do Pr. Rodnei Romano (ou outro com raciocínios longos) para confirmar que a IA agora respeita o teto de 180s e que os clipes finais capturam pontos de conclusão intermediários coerentes (não cortados no meio de uma frase).
+
+---
+
+## Filtro de fase do culto — abertura/dízimo/avisos excluídos (12/07/2026)
+
+**Pedido do usuário:** "ignorar a abertura do culto, dízimo e oferta e apresentação, pegar somente a palavra para gerar os cortes." Até esse momento, os prompts de IA (`sysAnalise` e `sysFinal`) avaliavam qualquer trecho do vídeo pelos 7 critérios de retenção (gancho, emoção, ritmo, etc.) sem nenhuma distinção estrutural entre as fases do culto — um trecho de abertura empolgado ("bom dia, igreja!!") ou um apelo de dízimo com linguagem emocional forte ("Deus tem sido fiel, separe sua oferta com fé") poderia, em tese, pontuar bem nos critérios de emoção/impacto e acabar virando Short, mesmo não sendo pregação.
+
+**Por que isso não apareceu como bug antes:** os vídeos processados até agora provavelmente tinham blocos de abertura/avisos/dízimo com pontuação naturalmente baixa (pouco gancho, ritmo de fala diferente da pregação) e ficaram abaixo do `minBlockScore`. Mas isso era um efeito colateral do scoring genérico, não uma regra explícita — o risco de um trecho desses "passar" sempre existiu, e o usuário decidiu eliminar essa ambiguidade de forma estrutural em vez de confiar no scoring genérico.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):**
+
+1. **`sysAnalise`** (node "Preparar GPT — Analisar Blocos", 1º passe que pontua blocos de ~3min): ganhou uma **REGRA DE EXCLUSÃO OBRIGATÓRIA** no topo do prompt, aplicada ANTES de qualquer nota pelos 7 critérios normais. A IA agora recebe uma lista explícita das 4 fases não-pregação (abertura/boas-vindas, avisos/recados, apelo de dízimos e ofertas, louvor/música) com exemplos de frases típicas de cada uma, e deve atribuir nota máxima de **5** a qualquer bloco que pertença a uma delas — independentemente de quão emocionante o texto pareça. Os 7 critérios de retenção (gancho, emoção, ritmo etc.) só se aplicam normalmente a blocos que a IA classificar como pregação. O prompt reforça: "na dúvida, prefira a nota baixa — é melhor descartar um bloco de pregação ambíguo do que deixar passar abertura/dízimo/avisos/louvor."
+   - O JSON de resposta ganhou um campo novo, **`"fase"`**, com valores possíveis `"pregacao"`, `"abertura"`, `"avisos"`, `"dizimo_oferta"` ou `"louvor"` — não é usado pelo código (`Ranking dos Blocos` continua filtrando só por `score >= minBlockScore`), mas fica disponível nos dados da execução para facilitar diagnóstico futuro (dá para ver no `get_execution` exatamente qual fase a IA atribuiu a cada bloco, sem precisar reler o texto inteiro).
+
+2. **`sysFinal`** (node "Preparar GPT — Seleção Final", 2º passe que escolhe os clipes finais): ganhou duas reforços, já que este passe recebe a transcrição SRT **completa** (não só os blocos aprovados) e por isso pode, em teoria, escolher um `start`/`end` que caia numa borda de abertura/avisos/dízimo mesmo que o bloco pai tenha sido classificado como pregação (blocos são fatias de ~3min, então um bloco de pregação pode ter alguns segundos de transição no início/fim que ainda pertencem à fase anterior):
+   - A frase de abertura do prompt agora avisa que os blocos recebidos já vêm filtrados, mas que a IA deve continuar vigilante se qualquer trecho da transcrição completa pertencer a abertura/avisos/dízimo/louvor — nesse caso, nunca selecionar um clipe dali.
+   - REGRAS INEGOCIÁVEIS ganhou uma linha dedicada: nenhum clipe pode vir dessas 4 fases, e se um ponto de conclusão do PASSO 1 cair dentro de um desses trechos, deve ser descartado.
+
+**Por que não foi criado um filtro em código (Code node) em vez de depender só do prompt:** ao contrário do teto de 180s (que é um número objetivo, fácil de validar programaticamente com `dur > 180`), decidir se um trecho é "abertura", "dízimo" ou "pregação" é uma tarefa de compreensão de linguagem natural — não dá para escrever uma regex ou checar um número para isso de forma confiável. Por isso o filtro fica inteiramente a cargo da IA nos dois passes (com reforço redundante no 2º passe como camada de segurança), em vez de uma validação determinística no `Montar Clipes` como acontece com duração/gap/formato de timestamp.
+
+**Validado com execução real — ver seção "Validação do filtro de fase — execução #25 vs #26" abaixo.**
+
+---
+
+## Validação do filtro de fase — execução #25 vs #26 (12/07/2026)
+
+**Contexto:** a pedido do usuário ("usar os vídeos que estão na pasta para fazer a validação"), em vez de esperar um novo vídeo ser enviado, analisei a execução mais recente que já tinha rodado nesta sessão (#25) e disparei uma nova execução (#26) no mesmo vídeo para comparação direta antes/depois do filtro de fase.
+
+**Execução #25** (workflow `ID4wisnN4Tqpt2zh`, iniciada 13:34:38 UTC, concluída com sucesso às 18:42:46 UTC — ~5h10min): processou o vídeo "Não é o Fim, é o Crescimento || Culto Ao Vivo - 07/07/2026 | Pr. Rodnei Romano" (7725s/128:45min, único vídeo presente na pasta de entrada `Videos-Cortes` no momento). Essa execução já tinha o fix do teto de 180s (aplicado 12:29 UTC, antes da execução começar) mas **ainda não** tinha o filtro de fase (aplicado só às 18:53 UTC, depois da execução terminar) — ou seja, é uma amostra real do comportamento do pipeline exatamente no estado "só com o fix de 180s, sem filtro de fase".
+
+**O que a 2ª IA (`GPT — Seleção Final`) retornou:** 8 clipes candidatos. Analisando cada um via `get_execution`:
+
+| # | Título | Intervalo | Duração | Resultado no Montar Clipes | Conteúdo real |
+|---|--------|-----------|---------|------------------------------|----------------|
+| 1 | melhor-lugar-presenca | 30–69.6s | 39.6s | ✅ Aprovado → idx 01 | **Louvor/abertura** — hook: "Aleluia, eu não sei você, mas eu vim aqui somente para adorar a Ele" |
+| 2 | anjos-santo-sem-parar | 69.6–154.1s | 84.5s | ❌ Rejeitado — start igual ao end do clipe 1 (gap 0s < 10s mínimo) | Louvor — sobre anjos adorando "Santo" |
+| 3 | adoracao-verdadeira-transborda | 230–311.7s | 81.7s | ✅ Aprovado → idx 02 | **Louvor/abertura** — sobre "adoração verdadeira", "presença não se compra, se recebe" |
+| 4 | continue-cavando-sitina | 5838.9–6060.3s | 221.4s | ❌ Rejeitado — excede 180s | Pregação (tema "Sítina", poços de Isaque) |
+| 5 | terceiro-poco-alargamento | 6215.4–6380.9s | 165.5s | ✅ Aprovado → idx 03 | **Pregação de fato** — tema do "terceiro poço" (Reobote), ~80% do vídeo |
+| 6 | reubot-paz-prosperidade | 6486.1–6698.2s | 212.1s | ❌ Rejeitado — excede 180s | Pregação (continuação do tema Reobote) |
+| 7 | era-espirito-alargamento | 6698.2–6894.6s | 196.4s | ❌ Rejeitado — excede 180s | Pregação |
+| 8 | milagre-quem-nao-entrou-briga | 6978.4–7208.3s | 229.9s | ❌ Rejeitado — excede 180s | Pregação |
+
+**Achado principal (valida o pedido do usuário):** dos 3 clipes que passaram pelos filtros de código e foram efetivamente cortados e upados para o OneDrive, **2 de 3 (66%) eram conteúdo de louvor/abertura, não pregação**. O bloco 1 da 1ª IA (0–180s, que cobre os clipes 1 e 2 acima) recebeu nota **84/100** no scoring antigo — alta o suficiente para entrar no top 5 e ser repassado à 2ª IA — precisamente porque linguagem de adoração emocional ("Aleluia", "eu vim aqui somente para adorar") pontua bem nos critérios de "emoção" e "impacto" do prompt antigo, que não distinguia louvor de pregação. Isso confirma, com dados reais e não hipotéticos, que o filtro de fase implementado nesta sessão resolve um problema que já estava acontecendo em produção, não um risco teórico.
+
+**Achado secundário (compliance parcial do teto de 180s):** mesmo com o prompt já avisando explicitamente sobre o teto de 180s (fix aplicado antes desta execução), a IA ainda retornou 4 de 8 clipes acima do limite (221s, 212s, 196s, 230s) — todos na segunda metade do vídeo, provavelmente porque esses trechos de pregação têm arcos de raciocínio mais longos e a IA priorizou capturar o pensamento completo mesmo sendo instruída a não fazer isso. **O filtro de código (`dur > 180`) funcionou corretamente como rede de segurança em todos os 4 casos** — nenhum clipe fora do limite vazou para o corte final — mas isso também significa que menos clipes sobrevivem no total (só 3 de 8 candidatos, taxa de aproveitamento de 37.5%). Não é um bug crítico (o sistema continua seguro), mas é um sinal de que a instrução do prompt sozinha não é 100% suficiente para vídeos com arcos de pregação muito longos — se isso se repetir com frequência, vale considerar a abordagem #3 já listada na seção "Bug pendente" (verificação de cada clip END num PASSO 3 dedicado) ou reduzir ainda mais o intervalo sugerido no PASSO 1 (hoje "a cada 40-180s").
+
+**Execução #26 — teste direto com o filtro de fase aplicado:** como o vídeo "Não é o Fim, é o Crescimento" continua sendo o único arquivo elegível na pasta de entrada (`Videos-Cortes`), disparei uma nova execução manual (`execute_workflow`, id **26**) no mesmo vídeo, agora com o workflow já atualizado (filtro de fase + teto de 180s reforçado). Baseado no tempo da execução #25 (~5h10min para este vídeo de 128min, a maior parte em whisper.cpp `large-v3`), o resultado só deve ficar pronto várias horas depois de disparado. **Expectativa a validar quando a execução #26 terminar:** o bloco 1 (0–180s, região de louvor/abertura) deve receber nota ≤5 no `GPT — Analisar Blocos` (campo `fase` deve vir como `"louvor"` ou `"abertura"`), ser descartado no `Ranking dos Blocos`, e nenhum clipe final deve cair no intervalo 0–360s aproximadamente (onde ficam os blocos de louvor identificados nesta análise). Consultar `search_executions` (workflowId `ID4wisnN4Tqpt2zh`) para o status mais recente.
+
+---
+
+## Bug corrigido — IA zerava criteria e aplicava nota-teto de exclusão a blocos de pregação real (13/07/2026)
+
+**Sintoma:** execução #35 (vídeo "Culto Ao Vivo - 07/07/2026 | Pr. Rodnei Romano.mp4", 3751s/~62min) travou no "Ranking dos Blocos" com `Nenhum bloco atingiu nota minima de 40`. Os 18 blocos vieram assim: `1:5, 2:5, 3:5, 4:5, 5:5, 6:5, 7:5, 8:5, 9:5, 10:5, 11:5, 12:5, 13:5, 14:5, 15:5, 16:5, 17:5, 18:5` — ou seja, todos os blocos, sem exceção, com a mesma nota mínima.
+
+**Diagnóstico:** lendo a resposta bruta da IA (`GPT — Analisar Blocos`) via `get_execution`, o campo `"fase"` (adicionado pelo filtro de fase do culto, sessão de 12/07/2026) mostrou que só o bloco 1 foi classificado como `"abertura"` — os outros 17 blocos vieram todos com `"fase":"pregacao"`, ou seja, a própria IA reconheceu que era conteúdo de pregação de fato. Mesmo assim, TODOS os 17 blocos de pregação vieram com `score:5` e os 7 critérios (`gancho`, `emocao`, `velocidade`, `tom`, `impacto`, `duracao`, `retencao`) zerados. As justificativas em texto (`reason`) eram genuínas e diferenciadas por bloco ("ainda muito introdutório/explicativo", "trecho excessivamente repetitivo", "aplicação pastoral contínua, porém muito repetitiva") — a IA claramente percebeu diferenças de conteúdo entre os blocos, mas não traduziu isso em notas diferentes, aplicando o mesmo valor "5" (o número citado na REGRA DE EXCLUSÃO OBRIGATÓRIA como teto para fases excluídas) mesmo a blocos que ela própria não considerava excluídos.
+
+**Causa raiz:** o prompt `sysAnalise` (implementado em 12/07/2026 para o filtro de fase) dizia "atribua nota MÁXIMA de 5" para fases excluídas, e depois "Na dúvida entre pregação e uma das fases acima, prefira a nota baixa". Não havia nenhuma restrição impedindo a IA de aplicar esse mesmo "5" também a blocos que ela mesma rotulava como `"pregacao"` — nem nenhuma exigência de que `score` batesse com a soma dos 7 critérios individuais. Para um vídeo com estilo de fala muito contínuo (sermão longo, poucos "momentos isoláveis" dentro de cada bloco de 3min), a IA parece ter generalizado o atalho "não tem gancho forte aqui → nota mínima seguro = 5" para blocos inteiros de pregação legítima, em vez de calcular os critérios individualmente (que, mesmo para um bloco fraco, quase sempre somariam algo entre 15-35 pontos — por exemplo, `velocidade` sozinho vale 3-10pts em qualquer bloco com fala, já que o prompt define faixas para fala rápida, lenta e intencionalmente pausada). Isso é diferente do caso do vídeo "Fique Atento à Oportunidade" (09/07/2026), onde os blocos de baixa nota tinham valores diferenciados (9, 9, 9, 9, 10, 44, 57) refletindo julgamento real — aqui, os 17 blocos "5" idênticos e critérios todos zerados são o padrão característico de um atalho degenerado da IA, não uma avaliação genuína.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):**
+1. **Novo parágrafo no prompt `sysAnalise` — "REGRA DE CONSISTÊNCIA NUMÉRICA"**, inserido logo após a regra de exclusão e antes de "CRITÉRIOS E PESOS": exige explicitamente que `score` seja a soma exata dos 7 valores em `criteria`; deixa claro que a nota-teto de 5 com critérios zerados é reservada EXCLUSIVAMENTE a blocos com `fase` diferente de `"pregacao"`; instrui a IA a nunca copiar o mesmo score/criteria/reason de um bloco anterior; e pede explicitamente que blocos de pregação fraca ainda somem 15-35 pontos realisticamente, com exemplos numéricos por critério.
+2. **Salvaguarda de código no "Ranking dos Blocos"** (mais importante que o fix de prompt, porque não depende do modelo obedecer): o código agora lê o campo `"fase"` já retornado pela IA e força `score = 0` para qualquer bloco cuja fase não seja `"pregacao"` — independentemente de qual número a IA tenha escrito. Isso torna a exclusão de fase determinística (decidida em código, não confiando que a IA sempre vai respeitar o teto numérico de 5), e ao mesmo tempo separa claramente "exclusão por fase" (agora 100% código) de "qualidade do conteúdo de pregação" (que continua sendo julgamento da IA, mas agora com uma regra que impede o atalho degenerado).
+3. **Mensagem de erro do "Ranking dos Blocos" melhorada**, seguindo o mesmo padrão já usado em "Montar Clipes": quando nenhum bloco atinge a nota mínima, o erro agora inclui a distribuição de fases (`ex: pregacao:17, abertura:1`), detecta se todos os critérios vieram zerados (sinal do bug de scoring descrito acima) e ajusta a "causa provável" de acordo — evitando que o próximo diagnóstico precise repetir manualmente a leitura da resposta bruta da IA como foi feito desta vez.
+
+**Por que a salvaguarda de código (#2) é mais importante que o fix de prompt (#1):** fixes de prompt reduzem a chance do bug acontecer de novo, mas não garantem — modelos de linguagem podem voltar a tomar atalhos em vídeos com estilo de fala parecido. A salvaguarda de código, por outro lado, garante que mesmo que a IA volte a zerar os critérios de blocos de pregação, pelo menos a exclusão de fase (abertura/avisos/dízimo/louvor) continua funcionando de forma determinística — e o erro resultante (se todos os blocos de pregação ainda ficarem abaixo do mínimo) agora chega com diagnóstico automático em vez de exigir investigação manual.
+
+**Fix insuficiente na primeira tentativa — execução #42 reproduziu o mesmo bug (13/07/2026):** a pedido do usuário, disparei uma execução do zero (não Retry) no mesmo vídeo para validar o fix acima. Resultado: **o mesmo bug se repetiu, quase idêntico.** 18 blocos, todos `score:5`, todos os 7 critérios zerados, 18 de 18 marcados `fase:"pregacao"` pela própria IA (dessa vez nem o bloco de abertura foi excluído — a IA classificou até a leitura bíblica inicial como pregação, o que é tecnicamente correto). As justificativas de texto continuavam diferenciadas e plausíveis ("ainda não é desenvolvimento pleno da mensagem", "trecho excessivamente repetitivo, sem progressão narrativa", "conteúdo praticamente duplicado") — ou seja, a REGRA DE CONSISTÊNCIA NUMÉRICA (que pedia explicitamente para a IA calcular os critérios e não usar 5 fora do caso de exclusão) não foi suficiente para mudar o comportamento do modelo. A salvaguarda de código (força `score=0` só para `fase != "pregacao"`) funcionou como projetado — não foi ela que causou a falha, foi a ausência de qualquer bloco com nota real acima do piso.
+
+**Segundo diagnóstico — problema de ancoragem, não de instrução:** a hipótese revisada é que o formato do rubric (somar pontos a partir de 0 em 7 critérios, todos com peso e faixas "ideais" bem definidas) empurra o modelo a julgar cada bloco de 3min como se ele próprio precisasse ser um Short pronto e editado — e como um bloco cru de fala contínua raramente parece "pronto" (sem gancho editado, sem pico de emoção isolado, "ainda não chegou no ponto forte do sermão"), o modelo colapsa para o valor mais seguro que já viu no prompt (5, o número usado no exemplo de exclusão), mesmo depois de ser instruído a não fazer isso. Reforçar a REGRA em texto não resolveu porque o problema não era falta de instrução — era o ANCORAMENTO do rubric aditivo (começar de 0 e somar) predispor a notas baixas por padrão sempre que nenhum critério "salta aos olhos".
+
+**Segundo fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`), trocando a estrutura do rubric:**
+1. **Novo parágrafo "FILTRO GROSSEIRO"** logo antes de CRITÉRIOS E PESOS: explica à IA que esta etapa é um filtro grosseiro de relevância sobre blocos de ~3min, não a escolha do clipe final (isso acontece depois, com a transcrição completa) — portanto um bloco de pregação comum, sem nada excepcional nem horrível, deve receber nota MÉDIA (faixa 40-55), não uma nota baixa. Isso ataca diretamente a suposição errada que o modelo parecia estar fazendo (julgar o bloco como se precisasse ser o Short final).
+2. **Rubric reescrito de aditivo para "baseline + ajuste"**: cada um dos 7 critérios ganhou um valor BASE explícito (ex: gancho BASE 10pts de 25, emoção BASE 10pts de 20, impacto BASE 8pts de 20) — a IA agora parte desse valor médio e ajusta para cima ou para baixo, em vez de começar de 0 e "ganhar" pontos. Cada critério também ganhou uma frase proibindo 0 no caso comum ("sem gancho editorial pronto = mantenha ao menos 5-8pts... isso é normal, não indica bloco ruim").
+3. **REGRA DE CONSISTÊNCIA NUMÉRICA reforçada com piso explícito**: "um bloco de pregação só deve somar MENOS de 20 pontos totais se for GENUINAMENTE inutilizável (leitura de versículo sem aplicação, ruído técnico, repetição EXTREMA e LITERAL >80% do bloco)" — e uma lista explícita do que NÃO justifica nota baixa (repetição moderada, tom pausado, falta de gancho pronto, "ainda não chegou ao ponto alto").
+4. **Regra de exclusão ajustada**: adicionado "INCLUINDO leitura bíblica de abertura da mensagem e contextualização inicial do tema — isso ainda é pregação, não é abertura do culto" — para reduzir a chance da IA classificar os primeiros blocos de um sermão (que tipicamente começam com leitura de texto bíblico) como "abertura" por engano.
+
+**Por que essa mudança é estruturalmente diferente da primeira tentativa:** o primeiro fix pediu para a IA "não fazer o atalho" (regra negativa, "não copie a mesma nota"). O segundo fix muda o que a IA está calculando — em vez de "some pontos até chegar numa nota", agora é "comece de uma nota razoável e ajuste". Isso é uma mudança de enquadramento (framing), não apenas mais uma instrução empilhada nas anteriores, que é a abordagem que tem mais chance de alterar esse tipo de comportamento de modelo.
+
+**Ainda não testado com uma reexecução real após este segundo fix.** Esta é a terceira vez que o pipeline chega até este ponto com o mesmo vídeo (execuções #35 e #42 falharam aqui, ambas ~3h45-4h de processamento) — antes de disparar uma quarta execução do zero, vale considerar usar o botão "Retry" do n8n na execução #42 (reaproveita download+whisper já feitos, só re-chama a IA a partir de "GPT — Analisar Blocos") para validar mais rápido, já que o vídeo e a transcrição não mudam entre tentativas.
+
+---
+
+## Terceira falha consecutiva e mudança de estratégia — "Ranking dos Blocos" vira fallback, não trava (13-14/07/2026)
+
+**Execução #47 (fresh run com o rubric baseline) reproduziu o mesmo bug pela 3ª vez:** vídeo "Culto Ao Vivo - 07/07/2026 | Pr. Rodnei Romano.mp4" (3751s/~62min, 10.07GiB). Rodou 3h24min (01:14–04:38 UTC) e falhou de novo no "Ranking dos Blocos": 17 blocos de pregação, todos nota 5. Mas desta vez a resposta bruta da IA mostrou uma diferença importante em relação às tentativas #35 e #42: nos blocos 2–12 a IA finalmente **calculou os critérios individualmente** em vez de zerar tudo (ex: bloco 2 = `{gancho:1, emocao:1, velocidade:0, tom:1, impacto:1, duracao:0, retencao:1}`, soma 5) — ou seja, a REGRA DE CONSISTÊNCIA NUMÉRICA funcionou desta vez. O problema é que ela deu nota 1 (quase o piso) pra quase todo critério, ignorando os valores BASE sugeridos (10, 10, 7, 5, 8, 5, 3 = ~48 de soma esperada). Nos blocos 13–18 ela voltou a zerar tudo, mas com justificativas coerentes ("repetição literal massiva da mesma frase", "conteúdo praticamente todo repetido") — sinal de que, pelo menos nesses blocos finais, a nota baixa reflete conteúdo genuinamente repetitivo, não um bug de scoring.
+
+**Mudança de diagnóstico:** juntando as 3 execuções reais (#35, #42, #47) com 2 reformulações de prompt diferentes, todas convergem para o mesmo veredito sobre este vídeo específico — pouco gancho, pouca variação de tom, muita repetição, segundo os 7 critérios do prompt. Isso deixou de parecer um bug de prompt isolado e passou a parecer um traço genuíno (ainda que possivelmente exagerado) do estilo de fala deste pregador neste sermão específico, captado de forma consistente por chamadas de IA independentes. Insistir numa 3ª rodada de prompt engineering teria retorno decrescente, especialmente considerando o custo de ~3-4h de VPS por tentativa.
+
+**Fix estrutural aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`), a pedido do usuário:** o "Ranking dos Blocos" não trava mais o pipeline quando nenhum bloco atinge `minBlockScore`. Em vez de lançar erro, agora verifica se existe pelo menos um bloco com `fase === "pregacao"` (mesmo com nota baixa):
+- Se **nenhum** bloco for de pregação (só abertura/avisos/dízimo/louvor), o erro original é mantido — não há o que fazer, o vídeo realmente não tem conteúdo elegível.
+- Se **existem** blocos de pregação mas nenhum atinge a nota mínima, o código agora **prossegue mesmo assim**, usando até 8 desses blocos (em vez dos 5 do caminho normal) como `topBlocksSummary` para a 2ª IA — sem aplicar filtro de nota. Um campo novo `blockScoringFallback: true` (+ `blockScoringFallbackReason` com o motivo) fica disponível nos dados da execução para diagnóstico, mas não é usado para nenhuma lógica adicional.
+
+**Por que isso é seguro:** a 2ª IA ("Seleção Final") já recebia a transcrição SRT **completa** independentemente do resultado do "Ranking dos Blocos" (`$json.srtContent`) — o `topBlocksSummary` sempre foi só uma dica/destaque para guiar a atenção da IA, não a única fonte de informação. Isso significa que a etapa de block-scoring nunca foi, estruturalmente, o único lugar onde a qualidade do conteúdo é avaliada — é um filtro grosseiro de otimização (reduzir o que entra no prompt como "destaque"), não um portão de qualidade indispensável. Deixar essa etapa ser consultiva em vez de obrigatória não remove nenhuma camada real de proteção — a 2ª IA continua fazendo sua própria análise fina com o checklist de cobertura de janelas, o teto de 180s e o filtro de fase, todos aplicados independentemente do resultado do "Ranking dos Blocos".
+
+**Ainda não testado com uma reexecução real após este fix.** Esta seria a 4ª tentativa real com este vídeo — as 3 anteriores (#35, #42, #47) já consumiram juntas mais de 11h de processamento sem produzir um clipe sequer. Validar se o fallback realmente permite que a 2ª IA extraia clipes utilizáveis da transcrição completa, mesmo com blocos de baixa pontuação como guia.
+
+---
+
+## Bug corrigido — "moov atom not found" no FFprobe/FFmpeg (09/07/2026)
+
+**Sintoma:** o node "FFprobe + Extrair Áudio" falhava logo no início da execução (poucos segundos) com:
+```
+[mov,mp4,m4a,3gp,3g2,mj2 @ ...] moov atom not found
+...: Invalid data found when processing input
+```
+Essa mensagem do FFmpeg normalmente indica arquivo MP4 corrompido, mas o diagnóstico via `get_execution` (nodes "Selecionar Vídeo" e "Baixar Vídeo") revelou a causa real: o arquivo listado pela Microsoft Graph API tinha **`"size": 0`** e hash zerado (`quickXorHash: "AAAA..."`), e o "Baixar Vídeo" de fato baixou **0 bytes** (`"fileSize": "0 B", "bytes": 0`). O arquivo (`createdDateTime`) tinha sido criado no OneDrive apenas ~3 minutos antes da execução rodar — ou seja, o vídeo ainda estava sendo sincronizado pelo OneDrive desktop client no computador do usuário quando o workflow disparou (comum em arquivos grandes de culto ao vivo, que podem levar bastante tempo para subir). O workflow baixou um arquivo vazio/placeholder e só descobriu o problema 3 nodes depois, com uma mensagem de erro enganosa.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):** o node "Selecionar Vídeo" agora filtra candidatos por tamanho mínimo (`MIN_SIZE = 1MB`) antes de escolher o vídeo a processar. Se todos os vídeos encontrados na pasta estiverem abaixo desse tamanho, o node falha imediatamente com uma mensagem clara e acionável ("ainda parece estar sincronizando com o OneDrive... aguarde e rode novamente") em vez de deixar o erro estourar de forma críptica lá na frente no FFprobe. Efeito colateral útil: se houver múltiplos vídeos na pasta e um deles ainda estiver sincronizando, o filtro pula automaticamente o(s) arquivo(s) incompleto(s) e escolhe um vídeo já pronto, em vez de pegar sempre `items[0]` (o primeiro da lista, não necessariamente o disponível).
+
+**Ainda não testado com uma sincronização real em andamento** — a mudança foi validada por leitura de código/JSON, mas o cenário exato (dois vídeos na pasta, um pronto e um sincronizando) não foi reproduzido em execução real nesta sessão.
+
+---
+
+## Legendas — desabilitadas (08/07/2026)
+
+O usuário pediu para desabilitar a legenda queimada nos clipes finais. Antes, cada clipe passava por um sub-pipeline extra depois de "Montar Clipes": extrair o áudio só daquele trecho (`Extrair Áudio do Clipe`), rodar o whisper.cpp de novo só nesse trecho para gerar um `.srt` palavra-a-palavra (`Whisper.cpp Transcrever Clipe`, com `--max-len 1 --split-on-word`), e então o FFmpeg usava esse `.srt` no filtro `subtitles=...` para queimar o texto no vídeo. Isso significava rodar o whisper.cpp **duas vezes** por vídeo: uma vez na transcrição completa (para os prompts de IA) e mais uma vez por clipe (só para gerar a legenda visual).
+
+**O que foi removido (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):**
+- Node `Extrair Áudio do Clipe` (ffmpeg extraía o áudio do trecho do clipe)
+- Node `Preparar Whisper Clipe` (só repassava o item do loop)
+- Node `Whisper.cpp Transcrever Clipe` (2ª chamada ao whisper.cpp, por clipe)
+- Node `Preparar Corte Final` (só repassava o item do loop)
+- Renomeado `FFmpeg Cortar 9:16 + Legenda` → `FFmpeg Cortar 9:16`, e o comando FFmpeg não usa mais `-vf "...,subtitles=...:force_style=..."` — só `-vf "scale=-2:H,crop=W:H:..."` (mesmo crop 9:16, sem o filtro de legenda).
+- Reconexão: `Loop Over Items` (saída 1, o branch de processamento por item) agora liga direto em `FFmpeg Cortar 9:16`, pulando os 4 nodes removidos.
+
+**Resultado:** 33 nodes → 29 nodes. Menos uma chamada de whisper.cpp por clipe → workflow mais rápido e mais leve de CPU na VPS (a transcrição completa continua rodando normalmente, só a repetição por clipe que sumiu).
+
+**Configuração no HTML:** o checkbox "Incluir legendas queimadas" (`include-subtitles`) e o default `cfg.includeSubtitles` foram trocados para desmarcado/`false`. Se o usuário quiser reativar legendas no futuro, basta marcar o checkbox na aba Configurar antes de gerar o JSON — a lógica condicional (`sub` flag em `buildBlockWorkflow()`) que monta o sub-pipeline de legenda continua no código, só não é usada por padrão agora.
+
+**Nota sobre `Montar Clipes` e `Limpar Arquivos do Clipe`:** o campo `audioPath` do clipe (usado antigamente pelo `Extrair Áudio do Clipe`) ainda é gerado em `Montar Clipes` por conveniência de código, mas nunca é criado como arquivo real agora — é inofensivo (`rm -f` num arquivo inexistente não dá erro). Os campos `srtBase`/`srtPath` do clipe (que só existiam quando `sub=true`) não são mais incluídos.
+
+---
+
+## Extensão por silêncio — silencePrefix (estado atual)
+
+O `silencePrefix` estende o `clipEnd` da IA até o fim do próximo silêncio após o ponto de corte:
+
+```bash
+OEND={{ $json.clipEnd }}
+MAXEND=$(awk -v s={{ $json.clipStart }} 'BEGIN{printf "%.3f", s+180}')
+SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}')
+SRAW=$(ffmpeg -y -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" \
+  -af "silencedetect=noise=-30dB:duration=0.3" -f null - 2>&1 \
+  | grep "silence_end" | awk -v e="$OEND" '{t=$NF+0; if(t>e){print t; exit}}')
+AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" \
+  'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; \
+   else if(e<=m) printf "%.3f",e; else printf "%.3f",m}')
+```
+
+**Diferença em relação à documentação antiga:** usa `silence_end` (não `silence_start`), janela de 92s (não 45s), `duration=0.3` (não 0.8s), e faz seek 2s antes do OEND para capturar silêncios próximos ao ponto de corte.
+
+**Por que `silence_end`:** encontra o momento em que o silêncio termina e a fala recomeça. Usar `-to $AEND` no FFmpeg faz o clipe terminar exatamente antes da próxima fala, incluindo o silêncio completo após a última palavra. Mais natural do que cortar no início do silêncio.
+
+**Por que SRAW é usado diretamente:** o FFmpeg com input seeking (`-ss` antes de `-i`) preserva os PTS absolutos do arquivo original. O `silencedetect` retorna timestamps **absolutos**, não relativos ao seek. Bug histórico: código antigo somava `OEND + SRAW` — sempre ultrapassava MAXEND. Correto: usar `SRAW` diretamente.
+
+**MAXEND = clipStart + 180** — teto absoluto = 3 min (máximo YouTube Shorts).
+
+---
+
+## Prompts de IA — estrutura PASSO 1 / PASSO 2
+
+**Opção 3 (Blocos)** usa dois passes de IA:
+- **1º pass (`sysAnalise`):** IA recebe blocos de ~3min e dá score 0–100. Blocos abaixo de `minBlockScore` são descartados. Desde 12/07/2026, aplica primeiro uma REGRA DE EXCLUSÃO OBRIGATÓRIA: blocos de abertura/boas-vindas, avisos/recados, apelo de dízimos e ofertas, ou louvor/música recebem nota máxima 5, independentemente dos 7 critérios normais — ver seção "Filtro de fase do culto" abaixo.
+- **2º pass (`sysFinal`):** IA recebe os blocos aprovados e seleciona os clipes finais com chain-of-thought em 2 passos.
+
+**PASSO 0 — pré-processamento (node "Mesclar Pausas Curtas"):** roda ANTES do PASSO 1, em código (não em prompt). Mescla blocos SRT com gap < 0.5s (respirações) antes da transcrição chegar a qualquer IA. Ver seção "Bug pendente" para detalhes.
+
+**PASSO 1 — PONTOS DE CONCLUSÃO:** a IA lê TODA a transcrição já pré-processada (sem respirações) e mapeia 15–25 momentos onde o pregador conclui um pensamento completo (timestamp + resumo 5 palavras). Como o SRT já vem com pausas curtas mescladas, toda quebra de bloco remanescente já é uma pausa real (≥0.5s) — a IA só precisa decidir se o conteúdo também fecha o raciocínio.
+
+**PASSO 2 — SELEÇÃO DE CLIPES:** para cada clipe, `end` DEVE ser um dos pontos do PASSO 1, entre `start+40s` e `start+180s` (teto absoluto de 180s — ver "Bug corrigido — teto de 180s ignorado pela IA"). Nenhum clipe pode vir de abertura/avisos/dízimo/louvor (ver "Filtro de fase do culto").
+
+**Por que PASSO 1 existe:** whisper.cpp não gera pontuação. Sem isso, a IA cortava em enumerações e vírgulas.
+
+**Regras inegociáveis nos prompts:**
+- Nenhum clipe pode vir de abertura, avisos, dízimo/oferta ou louvor — somente da pregação/mensagem principal
+- `end` em ponto de conclusão real — NUNCA em enumeração, vírgula ou conjunção
+- Duração do clipe (`end - start`) nunca pode ultrapassar 180s
+- Cortes em pausas de fala, nunca no meio de palavra
+- Clipe autocontido: quem assiste sem contexto entende início, meio e fim
+- `conclusions` usa campo `t` (não `start`) — o código de Montar Clipes filtra por `start!=null`
+- `start` de cada clipe deve ser **≥10s após o `end` do clipe anterior** — gap mínimo obrigatório
+
+**Proteção de formato de timestamp:** instrução explícita no prompt + salvaguarda no código (veja seção Timestamps).
+
+---
+
+## Limites de duração (sem cap rígido de 90s)
+
+- `MAXEND = clipStart + 180` (silencePrefix — teto absoluto 3min)
+- `if (dur < MIN_DUR - 10 || dur > 180) continue` (Montar Clipes)
+- `if (clip.start < prevClipEnd + 10) continue` (gap mínimo 10s)
+- PASSO 2 (corrigido em 12/07/2026 — ver seção "Bug corrigido — teto de 180s ignorado pela IA"): "o 'end' DEVE ser um dos pontos de conclusão do PASSO 1 que caia ENTRE start+40s E start+180s (nunca antes, nunca depois)". Antes desse fix o prompt dizia "sem teto fixo — capture o raciocínio completo", o que contradizia o `dur > 180` do código e causava clipes descartados silenciosamente.
+
+---
+
+## Parse robusto do JSON da IA (Montar Clipes)
+
+```javascript
+let parsed;
+try { parsed = JSON.parse(text); }
+catch(_) {
+  const m = text.match(/\{[\s\S]*\}/) || text.match(/\[[\s\S]*\]/);
+  if (!m) throw new Error('IA nao retornou JSON. Resposta: ' + text.slice(0, 400));
+  try { parsed = JSON.parse(m[0]); }
+  catch(e) { throw new Error('JSON invalido: ' + e.message); }
+}
+const clips = (() => {
+  if (Array.isArray(parsed)) return parsed;
+  const c = parsed.clips || parsed.clipes || parsed.cortes;
+  if (c) return c;
+  const a = Object.values(parsed).filter(v => Array.isArray(v) && v.length > 0 && v[0] && v[0].start != null);
+  return a[a.length-1] || [];
+})().slice(0, 8);
+```
+
+**Opção 3** usa `raw` ao invés de `text` para ler a resposta da IA.
+
+---
+
+## makeAiNode — padrão de node HTTP para IA
+
+Cada chamada de IA usa dois nodes: um Code node ("Preparar X") que monta o objeto de request, e um HTTP Request node que envia.
+
+**Por que `specifyBody:"keypair"`:** `rawBody` e `jsonBody+specifyBody:"string"` falham com expressões longas no n8n — o campo é validado como JSON literal antes da avaliação da expressão. O padrão correto:
+
+```javascript
+// Code node ("Preparar X") retorna objeto JS nativo:
+return [{ json: { model: 'gpt-5.4-mini', messages: [...] } }];
+
+// HTTP Request node:
+specifyBody: "keypair"
+bodyParameters.parameters: [
+  { name: "model",    value: "={{ $json.model }}" },
+  { name: "messages", value: "={{ $json.messages }}" }
+]
+```
+
+O n8n serializa cada campo com `json:true` internamente, resolvendo todos os problemas de serialização.
+
+---
+
+## Timestamps — conversão de SRT para segundos
+
+O whisper.cpp gera SRT com formato `HH:MM:SS,mmm`. A IA historicamente confundia `MM:SS` com `MM.SS` decimal (ex: `02:04` → `2.04` em vez de `124`).
+
+**Dupla proteção implementada:**
+
+1. **No prompt:** instrução explícita com exemplos de conversão e proibição do formato `MM.SS`.
+
+2. **No Montar Clipes** (salvaguarda de código):
+```javascript
+const _dur = $('Preparar Whisper Blocos').first().json.duration || 0;
+const _maxTs = clips.reduce((m,c)=>Math.max(m,c.end||0),0);
+if (clips.length > 0 && _maxTs > 0 && _maxTs < 120 && _dur > 600) {
+  clips = clips.map(c => ({...c, start: Math.round(c.start*60*10)/10, end: Math.round(c.end*60*10)/10}));
+}
+```
+
+---
+
+## Bugs resolvidos — não regredir
+
+| Bug | Causa | Fix |
+|-----|-------|-----|
+| Silêncio nunca estendia | `AEND = OEND + SRAW` — somava offset absoluto | Usar `SRAW` diretamente como timestamp |
+| Pausas de respiração detectadas | `duration=0.4` capturava micro-pausas | Mudar para `duration=0.3` + buscar `silence_end` |
+| Só 1 clipe retornado | PASSO 1 mapeava segmentos temáticos | Mudar para pontos de conclusão (15–25 endpoints) |
+| "Montar Clipes não retornou nada" | Chave `"clipes"` em PT + regex greedy | Parse try/catch + fallback multi-chave |
+| Clipe cortado no meio de frase | Cap de 90s sem extensão por silêncio | silencePrefix + PASSO 2 com `end` em ponto de conclusão real, respeitando o teto de 180s (ver bug do teto de 180s abaixo) |
+| Timestamps em minutos (2.04 em vez de 124.1) | GPT lia `MM:SS` como `MM.SS` decimal | Instrução no prompt + salvaguarda ×60 no Montar Clipes |
+| "you must provide a model parameter" | `rawBody`/`jsonBody` não serializam expressões | `specifyBody:"keypair"` + Code node retorna objeto JS nativo |
+| Clipes contíguos com sobreposição | start de N = end de N-1; silencePrefix estendia para dentro do N | Prompt exige gap ≥10s; Montar Clipes filtra `clip.start < prevClipEnd + 10` |
+| Montar Clipes retornou vazio sem erro (caso 1) | Timestamps 6.2–62.5 disparavam salvaguarda ×60 incorretamente, gerando durações >180s | Âncora de duração no prompt + throw explícito com debug info |
+| Montar Clipes: 8 clipes válidos mas todos nos primeiros 132.6s de vídeo de 2529.6s | Viés de atenção da IA em transcrições longas — instrução em prosa ("distribua ao longo do vídeo") foi ignorada | Checklist obrigatório de 6 janelas de tempo calculadas programaticamente, com regra de "pare e releia" + mínimo de 4 janelas diferentes nos clipes finais |
+| `update_workflow`/`get_workflow_details` retornando "Workflow not found" para `OrnUHDqFiUlN82Wt` | Provável exclusão/consolidação manual do duplicado pelo usuário no n8n (não confirmado) | Padronizar em `ID4wisnN4Tqpt2zh`, único workflow retornado por `search_workflows` e com `availableInMCP:true` |
+| Montar Clipes: 8 clipes válidos (232-382s cada) mas zero aprovados, vídeo de 7725s | Prompt `sysFinal` dizia "sem teto fixo" no PASSO 2, mas o código sempre teve `dur > 180` como filtro rígido — mismatch prompt/código | Prompt agora informa o teto de 180s explicitamente em 4 pontos (DURAÇÃO IDEAL, PASSO 1, PASSO 2, REGRAS INEGOCIÁVEIS); mensagem de erro do Montar Clipes agora diagnostica a causa real em vez de texto genérico |
+| "Baixar Vídeo" crashou com NodeCrashedError / out-of-memory | Node nativo `microsoftOneDrive` (download) carrega o arquivo inteiro na memória do processo Node.js antes de gravar em disco — vídeos de vários GB (10.07GiB/7.82GiB) estouram a memória disponível | Substituído por Execute Command com `wget` usando a URL de download direta (`@microsoft.graph.downloadUrl`), gravando direto no disco via streaming, sem passar pela memória do n8n |
+| `curl: not found` no "Baixar Vídeo" | VPS roda Alpine hardened (Docker Hardened Images v3.24), que não inclui `curl` nem `python3` — só `wget` | Comando trocado de `curl -L --fail --retry...` para `wget -q --tries=5 --waitretry=10 -O...` |
+| 2 execuções simultâneas travadas 17h+ sem completar nem o 1º node | 2 processos whisper.cpp `large-v3` brigando pelos mesmos 6 núcleos da VPS (`-t 6` por execução) | Lock de arquivo (`/home/node/.n8n-files/.processing.lock`) entre "Selecionar Vídeo" e "Baixar Vídeo", com expiração de 8h |
+| "Ranking dos Blocos": todos os 18 blocos com nota 5, inclusive 17 marcados `fase:"pregacao"` pela própria IA | IA zerou os 7 critérios e aplicou a nota-teto de exclusão (5) mesmo a blocos que ela classificou como pregação legítima — atalho degenerado em vídeo de fala muito contínua | Prompt `sysAnalise` ganhou regra de consistência numérica (score = soma dos criteria); código de "Ranking dos Blocos" agora força `score=0` para blocos com `fase != "pregacao"` (exclusão determinística, não depende só do prompt) |
+| `_meta.json` nunca aparecia no OneDrive (pasta só tinha `.mp4`) | Node "Upload Metadados → OneDrive" não respeita o parâmetro `fileName` — usa o nome do arquivo LOCAL (sempre `clip_XX_meta.json`, genérico e igual em todo vídeo), sobrescrevendo os mesmos ~8 arquivos desde 08/07 | `metaPath` local em "Montar Clipes" passou a usar o mesmo padrão final do `outPath` (`short_XX_slug_meta.json`), alinhando nome local ao nome desejado — corrige independente do node respeitar ou não o parâmetro `fileName` |
+| Tentativa de baixar `ggml-large-v3-turbo.bin` para `/models/` falhou com `Permission denied` | `/models/` pertence a `root:root`, sem escrita para o usuário `node` (uid 1000) que roda o n8n — modelo antigo foi colocado lá manualmente via acesso root/SSH, fora do fluxo do workflow | Modelo novo baixado via `wget` para `/home/node/.n8n-files/ggml-large-v3-turbo.bin` (pasta já gravável e já usada pelo pipeline) em vez de `/models/`; comando do whisper apontado para o novo caminho |
+
+---
+
+## Conexão MCP com n8n (a partir de 07/07/2026)
+
+O usuário conectou o n8n diretamente via MCP nesta sessão. Isso significa que, a partir de agora, fixes podem ser aplicados **diretamente no workflow em produção** usando `update_workflow` (operações atômicas: `updateNodeParameters`, `setNodeParameter`, `addNode`, `addConnection` etc.), sem precisar do fluxo manual de "editar HTML → gerar JSON → reimportar no n8n".
+
+**Como usar `update_workflow` corretamente (aprendido nesta sessão):**
+- A operação `setNodeParameter` espera `path` como **JSON Pointer relativo aos parameters do node** (ex: `/jsCode`), mas na prática o path `"jsCode"` e `"parameters.jsCode"` retornaram erro `"invalid or contains unsafe segments"`. **O que funcionou de fato foi a operação `updateNodeParameters`**, passando `{ nodeName: "...", parameters: { jsCode: "..." }, replace: false }` — essa é a forma recomendada para substituir o conteúdo de um Code node inteiro.
+- `nodeName` é o campo correto para identificar o node (não `nodeId`, apesar do node ter um `id` interno no JSON).
+
+**Workflow padrão do projeto:** `ID4wisnN4Tqpt2zh` — nome "YouTube Shorts — Blocos (GPT-4o × 2 passes + Whisper.cpp local)". `availableInMCP: true`.
+
+**Descoberta importante — "Retry" do n8n não revalida mudanças em nodes HTTP Request (13/07/2026):** ao tentar validar o segundo fix do bug de scoring degenerado (ver seção "Bug corrigido — IA zerava criteria..."), o usuário usou o botão "Retry" na execução #42 (que tinha falhado no "Ranking dos Blocos") esperando que isso rechamasse a IA com o prompt já corrigido. Resultado: a execução de retry (#43, depois #44 como retry de #43) falhou em ~40-75ms com a mensagem de erro **idêntica, palavra por palavra**, à da execução original. Investigando via `get_execution`, o `runData` da execução de retry continha o node `"GPT — Analisar Blocos"` com a **mesma resposta da API já registrada na execução original** — ou seja, o Retry do n8n reaproveita (pina) os dados de saída de TODOS os nodes que já haviam sido executados com sucesso antes do ponto de falha, **incluindo nodes HTTP Request como as chamadas de IA**, e só re-executa a partir do node que falhou (`Ranking dos Blocos`, um Code node). Isso significa que qualquer fix que dependa de uma nova chamada à IA (mudança de prompt, por exemplo) **nunca é testado por um Retry** — o Retry só é útil para validar fixes em nodes de código/lógica que ficam DEPOIS do ponto de falha, reaproveitando chamadas de API caras (whisper.cpp, GPT) que não mudaram. **Lição:** antes de recomendar "usa o Retry" ao usuário, verificar se o fix aplicado está em um node ANTES ou DEPOIS do ponto de falha original — se estiver antes (como um prompt de uma chamada de IA que já rodou), só uma execução nova (`execute_workflow` do zero) realmente testa a mudança.
+
+**Divergência encontrada e corrigida (07/07/2026):** ao verificar `ID4wisnN4Tqpt2zh` via `get_workflow_details` após aplicar o fix do checklist, notei que os dois nodes de Whisper.cpp ("Whisper.cpp Transcrever" e "Whisper.cpp Transcrever Clipe") estavam com o modelo `ggml-large-v3.bin` mas **sem a flag `-t 6`** de threads — só o HTML/JSON locais tinham essa flag. Ou seja, o upgrade de VPS (6 núcleos/18GB) documentado antes nesta sessão nunca tinha chegado ao workflow real em produção. Corrigido via `update_workflow` nos dois nodes. **Lição:** depois de qualquer fix "aplicado nesta sessão" via MCP, vale conferir com `get_workflow_details` se o conteúdo bate 100% com o que o HTML/JSON locais descrevem — nem sempre os três (n8n, HTML, JSON) estavam em sincronia antes desta sessão.
+
+**Incidente do workflow duplicado (06–07/07/2026):** por algum motivo (provavelmente reimportações manuais anteriores) existiam **dois workflows com o mesmo nome** no n8n: `OrnUHDqFiUlN82Wt` e `ID4wisnN4Tqpt2zh`. O primeiro fix desta sessão foi aplicado em `OrnUHDqFiUlN82Wt` (o único com `availableInMCP:true` no momento). Depois, ao investigar um erro de execução, descobriu-se que todo o **histórico real de execuções** (inclusive o erro que estava sendo debugado) pertencia a `ID4wisnN4Tqpt2zh` — ou seja, o usuário estava rodando o workflow errado (o que eu não tinha atualizado) em produção. Perguntado, o usuário escolheu explicitamente manter `OrnUHDqFiUlN82Wt`. Pouco depois, porém, `OrnUHDqFiUlN82Wt` começou a retornar `"Workflow not found or you don't have permission to access it."` em `update_workflow` e `get_workflow_details`, e sumiu completamente dos resultados de `search_workflows` — restando apenas `ID4wisnN4Tqpt2zh` (agora com `availableInMCP:true`, o que antes não era o caso). **A causa exata não foi confirmada nesta sessão** (mais provável: o usuário excluiu/consolidou o duplicado manualmente no n8n, possivelmente em resposta à própria pergunta sobre qual manter — mas sem confirmação explícita). Diante disso, o trabalho passou a ser feito em `ID4wisnN4Tqpt2zh`, que já continha (confirmado via `get_workflow_details`) todos os fixes anteriores: PASSO 0 ("Mesclar Pausas Curtas"), âncora de duração, throw explícito no "Montar Clipes", modelo `ggml-large-v3.bin` + `-t 6`. **Se o usuário voltar a ver dois workflows com o mesmo nome no n8n, vale apagar manualmente o duplicado antigo para evitar reincidência deste problema.**
+
+---
+
+## Trava de execução sequencial — 2 vídeos competindo pela VPS (13/07/2026)
+
+**Sintoma:** para validar o filtro de fase, disparei a execução #26 (via `execute_workflow` MCP, vídeo do Pr. Rodnei Romano, o mesmo que a execução #25 já tinha processado). O usuário, quase ao mesmo tempo, adicionou um segundo vídeo à pasta de entrada e disparou a execução #27. As duas ficaram com status `running` por mais de 17 horas sem completar **nem o primeiro node** do workflow (a chamada HTTP "Resolver Pasta", que normalmente leva segundos) — verificado via `get_execution` com `includeData:true`, que retornou `runData: {}` (vazio) para a #26 depois de 17h+.
+
+**Causa raiz:** o node "Whisper.cpp Transcrever" roda com a flag `-t 6` fixa (usa todos os 6 núcleos da VPS, upgrade documentado em 06/07/2026). Com 2 execuções simultâneas, são 2 processos `whisper.cpp large-v3` disputando os mesmos 6 núcleos ao mesmo tempo (12 threads concorrendo por 6 núcleos físicos) — o overhead de troca de contexto entre processos CPU-bound faz as duas execuções ficarem drasticamente mais lentas do que rodar uma de cada vez, em vez de simplesmente levarem o dobro do tempo. O workflow nunca foi desenhado para suportar paralelismo — sempre assumiu que só uma execução estaria ativa por vez.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):** implementado um lock de arquivo simples, baseado em timestamp, entre os nodes "Selecionar Vídeo" e "Baixar Vídeo":
+
+1. **Node novo "Verificar Trava de Execução"** (Execute Command): checa se existe `/home/node/.n8n-files/.processing.lock`. Se existir e tiver menos de 8h (`MAX_AGE=28800` segundos), imprime `STATUS:LOCKED` + o conteúdo do lock (nome do vídeo em processamento + timestamp de início) + a idade do lock em segundos, e sai com código 0 (não falha o node — a decisão de bloquear é feita no próximo node, para poder lançar uma mensagem de erro customizada e legível). Se o lock não existir, ou já tiver mais de 8h (considerado abandonado/travado), cria/sobrescreve o lock com `{{ $json.name }}|timestamp` e imprime `STATUS:ACQUIRED`.
+2. **Node novo "Aplicar Trava"** (Code): lê o stdout do node anterior. Se `STATUS:LOCKED`, lança um `Error` explicando que outra execução já está processando outro vídeo, há quanto tempo, e o que fazer (aguardar ~5h, ou apagar o lock manualmente na VPS se tiver certeza de que é um lock travado). Se não estiver locked, segue normalmente repassando os dados do "Selecionar Vídeo".
+3. **"Limpar Vídeo Original"** (o node de limpeza que já existia, disparado quando o `Loop Over Items` termina todos os clipes) agora também remove `/home/node/.n8n-files/.processing.lock` como parte do `rm -f`, liberando a trava para a próxima execução.
+
+**Por que expiração de 8h em vez de trava permanente:** se uma execução falhar no meio do processo (erro de API, FFmpeg, timeout de rede etc.), ela nunca chega ao "Limpar Vídeo Original" — que fica depois de todo o pipeline de corte — e o lock ficaria travado para sempre, bloqueando todas as execuções futuras até alguém apagar o arquivo manualmente. Uma execução bem-sucedida leva ~5h (baseado na execução #25); 8h dá margem confortável sem deixar o sistema travado por dias se algo falhar.
+
+**Limitação conhecida (aceita conscientemente, dado o escopo do pedido):** a trava só é liberada no caminho de sucesso ("Limpar Vídeo Original"), não em um error-handler dedicado do n8n — não implementei um workflow de erro separado para isso, que seria mais robusto mas também mais complexo. Se uma execução falhar, a trava fica ocupada até expirar sozinha em 8h (ou até alguém apagar `/home/node/.n8n-files/.processing.lock` manualmente na VPS). Isso é consistente com o padrão pragmático do resto do projeto — vale revisar se falhas parciais com lock travado se tornarem um problema recorrente.
+
+**Ainda não testado com uma reexecução real** — falta rodar 2 execuções em sequência para confirmar que a segunda é corretamente bloqueada com a mensagem de erro esperada enquanto a primeira está em andamento.
+
+---
+
+## Execução #51 — sucesso end-to-end, valida o fallback do Ranking dos Blocos (14/07/2026)
+
+**Resultado:** a execução #51 (disparada do zero após limpar o lock deixado pela #47) **completou com sucesso** todo o pipeline, do download até o upload dos shorts no OneDrive. Diferença importante em relação às 3 tentativas anteriores (#35, #42, #47): desta vez o vídeo processado foi **"Culto Ao Vivo - 07/07/2026 | Pr. Rodnei Romano_1080p.mp4"** (4.6GB, reencode 1080p, upload feito em 14/07/2026), não o arquivo 4K de 10GB original usado nas tentativas anteriores — o arquivo 4K original não está mais presente na pasta.
+
+**Scores da 1ª IA desta vez vieram genuinamente diferenciados:** 52, 57, 54, 49 para blocos de conteúdo real de pregação, e 4 para um trecho de louvor repetitivo (corretamente excluído). Isso confirma que o fallback estrutural (Ranking dos Blocos não trava mais o pipeline, ver seção "Terceira falha consecutiva" acima) funcionou exatamente como projetado — mas também que, desta vez, nem foi necessário cair no caminho de fallback: a 1ª IA conseguiu pontuar o conteúdo normalmente. 7 clipes finais foram gerados e enviados ao OneDrive.
+
+**Questão em aberto, não investigada:** não está confirmado se o reencode para 1080p (bitrate/áudio diferentes do 4K original) contribuiu para a IA finalmente produzir notas diferenciadas, ou se foi simplesmente uma execução "de sorte" do modelo. As 3 falhas anteriores usaram o arquivo 4K original; esta única execução bem-sucedida usou o reencode 1080p — amostra pequena demais para conclusão, mas vale observar se o padrão se repete (arquivos 4K brutos de câmera tendendo a scores degenerados vs. reencodes mais compactos tendendo a scores normais) em execuções futuras.
+
+---
+
+## Fila automática — loop sequencial + arquivamento de vídeos processados (14/07/2026)
+
+**Pedido do usuário:** identificar todos os vídeos na pasta de entrada e processá-los sequencialmente em loop — ao concluir o pipeline de um vídeo, iniciar automaticamente o próximo, até não haver mais vídeos pendentes — e mover cada vídeo original para `Videos-Cortes/Videos` assim que seu pipeline terminar (para não ser reprocessado).
+
+**Implementação (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):** 4 nodes novos encadeados após "Limpar Vídeo Original" (que já roda no caminho de sucesso, ao final do `Loop Over Items`):
+
+1. **"Mover Vídeo Processado"** (httpRequest, PATCH): move o vídeo original recém-processado para `/drive/root:/Videos-Cortes/Videos` via Microsoft Graph API (`PATCH /me/drive/items/{id}` com `parentReference.path`) — usa o `id` capturado em "Selecionar Vídeo" no início da execução. Path-based, não precisa do ID da pasta de destino hardcoded.
+2. **"Listar Arquivos (Verificar Fila)"** (httpRequest, GET): relista os arquivos da pasta raiz de entrada (mesma chamada que "Listar Arquivos" já fazia no início do pipeline) para ver o que sobrou depois que o vídeo processado saiu dali.
+3. **"Decidir Próximo Vídeo"** (Code): aplica o mesmo filtro de "Selecionar Vídeo" (extensão de vídeo + tamanho mínimo 1MB) sobre a nova listagem. Se sobrar pelo menos 1 vídeo elegível, retorna um item com `nextVideoName`/`nextVideoCount`; se não sobrar nenhum, **retorna `[]`** — um array vazio de itens naturalmente interrompe a cadeia (o próximo node não roda com 0 itens), terminando o loop sem nenhum erro.
+4. **"Disparar Próximo Vídeo"** (`n8n-nodes-base.executeWorkflow`, v1.3): chama o **próprio workflow** (`workflowId: ID4wisnN4Tqpt2zh`) de forma assíncrona — o parâmetro crítico é `options.waitForSubWorkflow: false`, que faz a chamada ser "dispare e esqueça" (fire-and-forget) em vez de bloquear a execução atual esperando o próximo vídeo terminar (que levaria mais 3-5h). Isso permite que a execução atual finalize rapidamente logo após disparar a próxima, em vez de ficar "presa" aguardando toda a cadeia.
+
+**Por que self-chaining em vez de um loop nativo do n8n:** o `splitInBatches` ("Loop Over Items") já usado no pipeline itera sobre *itens dentro de uma única execução* (os clipes de um vídeo) — não serve para encadear *execuções inteiras* separadas por vídeo, porque cada vídeo precisa passar por download, whisper.cpp e as 2 chamadas de IA do zero, e queremos que cada vídeo tenha sua própria execução isolada no histórico do n8n (mais fácil de debugar) em vez de uma única execução gigante processando todos os vídeos em sequência interna. Encadear via `executeWorkflow` (chamando a si mesmo) resolve isso: cada vídeo = 1 execução completa e independente, visível separadamente em `search_executions`.
+
+**Efeito colateral desejado — a trava de execução sequencial (seção acima) continua protegendo mesmo com o self-chaining:** como o novo vídeo é disparado só depois que "Limpar Vídeo Original" já rodou (que também é o node que libera o lock, `rm -f .processing.lock`), a nova execução parte com o lock já livre — sem risco de a execução recém-disparada se autobloquear. E como o disparo é sequencial (uma finaliza antes de disparar a próxima), nunca há 2 vídeos concorrendo pelos 6 núcleos da VPS ao mesmo tempo — o problema original que motivou a trava (seção "Trava de execução sequencial") continua resolvido, agora de forma automática em vez de depender do usuário disparar manualmente vídeo por vídeo.
+
+**Pegadinha de credenciais do MCP do n8n (aprendida nesta sessão):** ao criar um node HTTP Request novo via `update_workflow` com a operação `addNode`, passar um bloco `credentials: {...}` diretamente dentro do objeto `node` **não é suficiente** — o `update_workflow` retorna sucesso (`appliedOperations` correto) mas inclui um aviso separado (`"note": "HTTP Request nodes (...) were skipped during credential auto-assignment. Their credentials must be configured manually."`) informando que a credencial não foi de fato anexada. A forma que funciona é uma operação **`setNodeCredential`** separada, DEPOIS do `addNode`:
+```
+{ type: "setNodeCredential", nodeName: "Nome do Node", credentialKey: "microsoftOneDriveOAuth2Api", credentialId: "dpECDcyJI0Z5iKax", credentialName: "Microsoft Drive account" }
+```
+Isso foi confirmado 2 vezes nesta sessão: nos nodes "Mover Vídeo Processado"/"Listar Arquivos (Verificar Fila)" (o aviso desapareceu da resposta só depois do `setNodeCredential`) e depois de novo num node temporário criado só para diagnóstico. **Lição para o futuro:** sempre que criar um node HTTP Request via `addNode` que precise de credencial (`nodeCredentialType`), assumir que vai ser necessário um `setNodeCredential` complementar — não confiar no bloco `credentials` inline do `addNode`, mesmo que a API aceite esse campo sem erro de validação.
+
+**Descoberta sobre o estado real das pastas (14/07/2026) — a pasta raiz `Videos-Cortes` e a subpasta `Videos-Cortes/Videos` não têm o relacionamento simples que eu assumi:** ao verificar a fila via uma chamada Graph API temporária (mesma técnica de node temporário já documentada na seção "Conexão MCP com n8n"), descobri que:
+- A pasta raiz `Videos-Cortes` (a que o pipeline varre para decidir qual vídeo processar) está **vazia de vídeos** no momento — só contém as 4 subpastas (`Cortes` = saída dos shorts, `Finalizado`, `Transcricao`, `Videos`).
+- A subpasta `Videos-Cortes/Videos` (destino da nova feature de arquivamento) **já existia antes desta sessão** (criada em 29/06/2026) e já continha 7 arquivos de vídeo, com um perfil misto: o vídeo do Pr. Rodnei Romano recém-processado pela execução #51 (já estava lá, provavelmente movido manualmente pelo usuário), o vídeo do Pr. Daniel dos Santos (12/07, **ainda não processado**, sem shorts gerados), 2 vídeos de sermões antigos já processados em sessões anteriores, e 2 vídeos completamente sem relação com o projeto (um podcast sobre carros, um vídeo de música).
+- Como o pipeline só varre os filhos diretos da raiz `Videos-Cortes` (não entra em subpastas), o vídeo do Pr. Daniel dos Santos, estando dentro de `Videos-Cortes/Videos`, **nunca seria encontrado automaticamente** pela nova feature de fila — mesmo estando pronto para processar.
+- **Perguntado ao usuário se queria mover esse vídeo de volta para a raiz (para o loop pegá-lo automaticamente), o usuário optou por "Deixar como está"** — ou seja, o usuário mantém controle manual sobre quando e quais vídeos entram na fila da raiz `Videos-Cortes`, e a pasta `Videos-Cortes/Videos` parece ter um uso mais amplo (mistura vídeos já processados, vídeos ainda não processados e conteúdo sem relação com o projeto) do que a hipótese simples de "arquivo só de vídeos já cortados". **Não foi feita nenhuma mudança na organização das pastas** — a feature de mover-após-processar continua funcionando exatamente como pedido (move o vídeo original para `Videos-Cortes/Videos` ao final do pipeline), só a suposição de que essa pasta serviria também como fonte automática de novos vídeos foi descartada.
+
+**Validado com execução real — execução #61 → #62 (16/07/2026):** a execução #61 (vídeo "Não Deu Errado, Foi Livramento - 16/06/2026 | Pr. Flávio Souza", rodou das 17:45 às 20:47 UTC, ~3h) completou o pipeline inteiro com sucesso — 8 clipes gerados, `Mover Vídeo Processado` moveu o original para `Videos-Cortes/Videos` (`executionStatus:"success"`), `Decidir Próximo Vídeo` encontrou 2 vídeos restantes na raiz e escolheu o próximo ("Não viva somente no natural, viva o sobrenatural — Stephany Barros"), e `Disparar Próximo Vídeo` disparou a execução #62 com sucesso. **A cadeia de self-chaining funciona exatamente como projetado**, confirmado pelo usuário observando o comportamento em produção.
+
+**Mas a execução #62 (o vídeo disparado automaticamente) crashou** no node "Whisper.cpp Transcrever" com `NodeCrashedError` ("n8n may have run out of memory"), logo depois de "Baixar Vídeo" (124s) e "FFprobe + Extrair Áudio" (35.5s) terem sucesso. **Causa provável: não foi um problema da feature de fila em si, e sim uma colisão com trabalho de sessão concorrente** — no momento exato em que a #62 rodava (20:47–20:50 UTC), eu estava editando o mesmo workflow ao vivo via `update_workflow` (adicionando/removendo nodes temporários de diagnóstico para a troca do modelo whisper, incluindo uma mudança nos parâmetros do próprio node "Whisper.cpp Transcrever") como parte da tarefa de trocar o modelo para `large-v3-turbo`. Modificar a definição de um workflow (`addNode`/`removeNode`/`updateNodeParameters`) enquanto uma execução está ativamente passando por ele é arriscado — pode desestabilizar o motor de execução do n8n, o que bate com o padrão observado (crash abrupto tipo OOM, não um erro de comando normal como "model not found").
+
+**Efeito colateral do crash — lock órfão:** como a #62 crashou antes de chegar em "Limpar Vídeo Original" (o node que libera `/home/node/.n8n-files/.processing.lock`), o lock ficou preso referenciando o vídeo da Stephany Barros, o que bloquearia qualquer nova execução por até 8h (expiração automática) mesmo sem nada rodando de verdade. Verificado via node temporário (`LOCK_EXISTS`, idade 1672s) e removido manualmente (`rm -f`) logo em seguida — a fila está livre para rodar novamente agora.
+
+**Lição para o futuro:** evitar `update_workflow` (especialmente `addNode`/`removeNode`/mudanças em nodes de execução pesada como o Whisper.cpp) no workflow de produção enquanto uma execução real (não-temporária) pode estar em andamento — checar `search_executions` com `status:["running"]` antes de fazer edições estruturais, não só confiar que "parece" estar tudo parado.
+
+**Efeito colateral positivo:** como a #61 já é uma execução real completa e bem-sucedida, ela também serviu de primeira validação em produção para duas features que ainda estavam pendentes de teste real: o fix do bug de metadados (08/07→16/07, ver seção acima) — os 8 arquivos `_meta.json` gerados tinham nomes únicos por clipe (`short_01_Pr.-Flávio Souza_jesus-revela-quem-voce-e_meta.json` até `short_08_...`), confirmando que o bug de sobrescrita está corrigido — e o nome do pregador no arquivo final (15/07/2026), com o prefixo `Pr.-Flávio Souza` corretamente extraído e aplicado em todos os 8 arquivos.
+
+**Pendência atual:** o vídeo da Stephany Barros não foi processado (a execução que o pegou crashou) e continua na raiz `Videos-Cortes` — a fila não vai retomar sozinha (não há gatilho agendado, só o self-chaining que já foi interrompido). É necessário disparar o workflow manualmente de novo (ou usar o schedule skill para agendar) para ele ser pego — o lock já foi liberado, então a próxima execução deve rodar normalmente.
+
+**Segunda validação real — execução #72 → #73 (16/07/2026):** o usuário disparou o workflow manualmente de novo (via UI do n8n) para pegar o vídeo da Stephany Barros. A execução #72 completou com sucesso (1h44min — bem mais rápido que os ~3-5h típicos, provavelmente já usando o `large-v3-turbo`) e disparou automaticamente a #73, que também completou com sucesso (~1h20min), processando o vídeo do Pr. Lucas Felisberto. Duas cadeias de self-chaining consecutivas funcionando — parecia confirmar de vez a feature.
+
+**Terceira tentativa revela um bug estrutural — execução #76 → #77 (17/07/2026):** o usuário disparou o workflow de novo manualmente (vídeo do Pr. Daniel dos Santos, execução #76), que completou com sucesso (8 clipes, vídeo movido, `Decidir Próximo Vídeo` encontrou corretamente 6 vídeos restantes na fila, incluindo "Céu um retorno para o lar — Pr. Marcos Xavier"). Mas desta vez `Disparar Próximo Vídeo` (execução #77) falhou imediatamente com `Workflow is not active and cannot be executed` (stack trace em `getPublishedWorkflowData`).
+
+**Causa raiz:** o node "Disparar Próximo Vídeo" usa `n8n-nodes-base.executeWorkflow` com `source:"database"` chamando o workflow **por ID** (a si mesmo). Nesta versão do n8n (2.30.6, self-hosted, com sistema de versionamento draft/publish), esse tipo de chamada busca especificamente a **versão publicada/ativa** do workflow-alvo — não a versão em rascunho mais recente. Só que este workflow **nunca foi formalmente publicado**: `active:false`, `activeVersionId:null` o tempo todo. Tentei `publish_workflow` diretamente e recebi o erro `"Workflow cannot be activated because it has no trigger node. At least one trigger, webhook, or polling node is required"` — o único trigger existente era o "Iniciar Manualmente" (Manual Trigger), e o n8n **não permite ativar/publicar um workflow cujo único trigger é manual** (faz sentido: "ativo" normalmente significa "roda sozinho em produção", e um trigger manual por definição não roda sozinho).
+
+**Por que funcionou nas 2 primeiras vezes (#61→#62, #72→#73) e só quebrou na 3ª:** isso não ficou 100% confirmado, mas a explicação mais provável é que esses 2 primeiros sucessos aconteceram por causa de algum estado de cache/sessão interno do n8n relacionado a execuções manuais recentes (não uma "ativação" de verdade, já que `active` sempre esteve `false`) — e minhas próprias edições ao vivo no workflow via `update_workflow` (adicionar/remover nodes temporários de diagnóstico entre as tentativas #73 e #77) provavelmente invalidaram esse estado, expondo o problema estrutural que sempre existiu, só que mascarado até então. Isso é consistente com o padrão já visto no crash da execução #62 (edições concorrentes desestabilizando o motor de execução).
+
+**Fix aplicado (17/07/2026), a pedido explícito do usuário:** adicionado um node **"A Cada 6 Horas"** (`n8n-nodes-base.scheduleTrigger`, intervalo de 6 horas) conectado ao mesmo ponto de entrada que o Manual Trigger ("Resolver Pasta") — e então `publish_workflow` foi chamado com sucesso (`activeVersionId` gerado), já que agora existe um trigger de polling válido. Isso resolve o problema de duas formas:
+1. **Ativa o workflow de verdade** — `Disparar Próximo Vídeo` agora encontra uma versão publicada válida, então o self-chaining deve parar de falhar com esse erro específico.
+2. **Cria uma rede de segurança independente do self-chaining:** mesmo que a cadeia quebre de novo por qualquer outro motivo (crash, edição concorrente, etc.), o Schedule Trigger reexecuta o workflow a cada 6h de qualquer forma — se houver vídeo elegível na fila e o lock estiver livre, ele processa; se não houver nada, os nodes de seleção de vídeo simplesmente não encontram trabalho e o fluxo não avança (sem gerar erro barulhento, já que "Selecionar Vídeo" só lança erro se existir vídeo mas ele parecer corrompido/sincronizando — pasta vazia não é esse caso, é só ausência de itens elegíveis... **checar esse comportamento na próxima execução agendada real**, já que o código atual de "Selecionar Vídeo" lança erro se `allVideos.length === 0`, o que pode gerar um erro "esperado" a cada 6h quando a fila estiver vazia — não é perigoso, mas pode poluir o histórico de execuções com erros previsíveis; vale revisar se isso incomodar).
+
+**Ação imediata:** disparei a execução #78 manualmente para retomar a fila (6 vídeos parados, começando pelo do Pr. Marcos Xavier) enquanto o fix estrutural era aplicado — ela ficou rodando em paralelo à investigação e não foi afetada pela publicação do workflow (publicar não interrompe execuções em andamento).
+
+**Ainda não validado:** falta confirmar com uma execução real que o self-chaining volta a funcionar de ponta a ponta agora que o workflow está publicado, e observar se o Schedule Trigger de fato dispara sozinho quando chegar sua hora (não apenas quando chamado via self-chain ou manual).
+
+**Schedule Trigger validado — dispara sozinho a cada 6h (confirmado 20/07/2026):** `search_executions` mostrou execuções `mode:"trigger"` disparadas automaticamente e espaçadas exatamente 6h uma da outra (16:00, 22:00, 04:00, 10:00) nos dias seguintes — confirma que a publicação resolveu tanto a ativação quanto a rede de segurança agendada, exatamente como projetado.
+
+---
+
+## Bug corrigido — "Selecionar Vídeo" marcava execução como erro quando a fila estava vazia (20/07/2026)
+
+**Pedido do usuário:** "quando não encontrar o video retornar a mensagem que não encontrou e deixar o status como sucesso ou algum status diferente de erro, pois não é erro." Confirma exatamente a preocupação já registrada na seção anterior ("pode poluir o histórico de execuções com erros previsíveis") — e de fato, ao checar as execuções `mode:"trigger"` reais (#89, #93, #95, #96, todas disparadas pelo "A Cada 6 Horas"), várias vieram com `status:"error"` só porque a pasta `Videos-Cortes` estava vazia no momento daquela checagem — um estado normal e esperado (fila sem vídeo novo), não uma falha do pipeline.
+
+**Causa:** o node "Selecionar Vídeo" usava `throw new Error(...)` tanto para "nenhum vídeo na pasta" quanto para "vídeo(s) encontrado(s) mas ainda sincronizando (tamanho < 1MB)" — qualquer `throw` num Code node marca a execução inteira como `error` no histórico do n8n, mesmo quando a causa é só "não há nada para fazer agora".
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):**
+1. **"Selecionar Vídeo" reescrito** para nunca mais lançar `throw` nesses dois casos — em vez disso, retorna um item normal `{ videoFound: false, message: '...' }` com a mesma mensagem explicativa de antes (fila vazia, ou vídeo(s) ainda sincronizando). Quando encontra um vídeo elegível, retorna `{ videoFound: true, ...ready[0] }` — mantém todos os campos originais do vídeo (name, id, `@microsoft.graph.downloadUrl` etc.) intactos via spread, então nada downstream que já lia esses campos precisou mudar.
+2. **Novo node "Vídeo Encontrado?"** (`n8n-nodes-base.if`, v2.3), inserido entre "Selecionar Vídeo" e "Verificar Trava de Execução": checa `{{ $json.videoFound }}`. Se `true`, segue o pipeline normalmente (saída 0, mesma conexão que existia antes). Se `false`, a saída 1 fica propositalmente **sem conexão** — o item simplesmente para ali, a execução termina com `status:"success"`, e a mensagem explicativa fica visível no próprio output do node "Selecionar Vídeo" (e do "Vídeo Encontrado?", que apenas repassa o mesmo JSON) para quem for inspecionar a execução depois.
+
+**Por que um IF node em vez de só `return []` (mesmo padrão já usado em "Decidir Próximo Vídeo"):** `return []` também evita erro e para a cadeia, mas descarta qualquer mensagem — o pedido do usuário foi explícito em "retornar a mensagem que não encontrou", não só "não dar erro". Retornar um item real com `message` e gatear com IF preserva essa mensagem visível na execução, o que `return []` sozinho não permite (zero itens não carregam JSON nenhum).
+
+**Necessidade de republicar após cada edição estrutural:** confirmado de novo nesta sessão que qualquer `addNode`/`removeConnection`/`addConnection` via `update_workflow` deixa o workflow como rascunho não-publicado — mesmo já tendo sido publicado antes. `publish_workflow` precisou ser chamado de novo depois deste fix para o self-chaining e o Schedule Trigger continuarem funcionando (não é automático). **Lição reforçada:** toda edição estrutural neste workflow deve terminar com um `publish_workflow`, não só a primeira vez.
+
+**Validado:** inspecionei o node "Selecionar Vídeo" já publicado (`get_workflow_details` após o fix) e confirmei que o código novo e a conexão via "Vídeo Encontrado?" estão ativos (`active:true`, `activeVersionId` atualizado). As execuções `error` anteriores (#89, #93, #95, #96) são todas de ANTES deste fix — a próxima checagem agendada (a cada 6h) já deve vir como `success` quando não houver vídeo novo.
+
+**Achado à parte (não corrigido, só registrado):** a execução #93 (19/07, disparada pelo Schedule Trigger) falhou de verdade — não por fila vazia — no node "Mover Vídeo Processado", com erro da Microsoft Graph API `"The resource you are requesting could not be found"`, depois de ~4h26min processando um vídeo até o fim. Parece um erro transitório do Graph API (item não encontrado no momento do PATCH de mover), não relacionado a este fix. Vale investigar se se repetir.
+
+---
+
+## Nome do pregador na descrição dos shorts (15/07/2026)
+
+**Pedido do usuário:** "quando tiver o nome da pessoa incluir nome + descrição que já tem hoje" nos shorts. Perguntado onde exatamente incluir (campo novo no JSON, junto na descrição/hook, ou no título do short), o usuário escolheu **juntar no campo de descrição já existente** — sem criar campo novo, sem mexer no título/nome do arquivo.
+
+**Implementação (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):** no node "Montar Clipes", logo após `const vp = c.videoPath, vn = c.videoName;`, um regex extrai o nome do pregador do nome do arquivo de vídeo:
+
+```javascript
+const preacherMatch = (vn || '').match(/Pr\.?a?\.?\s+([A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+){0,4})/);
+const preacherName = preacherMatch ? preacherMatch[0].trim().replace(/\s+/g,' ') : null;
+```
+
+Depois, ao montar o `metaContent` de cada clipe, o campo `reason` (a "descrição" que já existia, com o texto "por que o clipe funciona") passa a vir prefixado com o nome quando encontrado:
+
+```javascript
+const clipReason = preacherName ? (preacherName + ' — ' + (clip.reason||'')) : (clip.reason||'');
+```
+
+Resultado no `_meta.json`: `"reason": "Pr. Rodnei Romano — <descrição original do clipe>"`. Se o regex não encontrar nada (vídeos sem o padrão "Pr. Nome" no arquivo, como conteúdo não relacionado a pregação), `reason` fica exatamente como era antes — sem prefixo forçado.
+
+**Por que o `hook` não foi alterado:** o campo `hook` é a frase exata de abertura falada no vídeo (citação literal usada pela IA para julgar o gancho do clipe) — prefixar o nome ali quebraria a fidelidade da transcrição. O campo `reason` ("por que funciona") é a explicação em linguagem natural, por isso foi o escolhido como "a descrição" para receber o nome.
+
+**Por que regex no nome do arquivo, e não um campo de configuração manual:** todos os vídeos deste projeto seguem o padrão de nomenclatura `"<Título> || Culto Ao Vivo - DD/MM/AAAA | Pr. Nome Sobrenome [ID-do-YouTube].mp4"` (ou variações com `_1080p` no lugar do ID) — o nome do pregador já está sempre presente no nome do arquivo antes mesmo do vídeo chegar ao pipeline. Extrair automaticamente evita um passo manual por vídeo e funciona tanto para "Pr." quanto para uma eventual pregadora ("Pra.", coberto pelo `a?` opcional no regex).
+
+**Testado com harness Node (fora do browser) contra os 7 nomes de arquivo reais observados na pasta `Videos-Cortes/Videos` nesta sessão:**
+
+| Nome do arquivo | Nome extraído |
+|---|---|
+| `Culto Ao Vivo - 07/07/2026 \| Pr. Rodnei Romano_1080p.mp4` | `Pr. Rodnei Romano` |
+| `Culto Ao Vivo - 12/07/2026 \| Pr. Daniel dos Santos_1080p.mp4` | `Pr. Daniel dos Santos` |
+| `Fique Atento à Oportunidade \|\| Culto Ao Vivo - 30/06/2026 \| Pr. Claudio Silva [1BW3q7YV1P0].mp4` | `Pr. Claudio Silva` |
+| `Quem é você depois do culto? - 14/06/2026 \| Pr. Claudio Silva [4PdRgC-xvsE].mp4` | `Pr. Claudio Silva` |
+| `Reforma de Deus \|\| Culto Ao Vivo - 05/07/2026 \| Pr. Daniel dos Santos [ohEv2mTvhG4].mp4` | `Pr. Daniel dos Santos` |
+| `TUDO SOBRE CARROS E PREPARAÇÃO AUTOMOTIVA... [AulJ8pGSsnU].mp4` (sem "Pr.") | `null` (sem prefixo) |
+| `SGT NANTES + JORGE LORDELLO - Flow #584 [HUdTabCyFgE].mp4` (sem "Pr.") | `null` (sem prefixo) |
+
+Todos os 7 casos reais bateram com o esperado, incluindo os 2 vídeos sem relação com pregação corretamente não recebendo nenhum prefixo.
+
+**Validado em produção (16/07/2026):** a execução #61 (vídeo "Não Deu Errado, Foi Livramento" — Pr. Flávio Souza) gerou os 8 `_meta.json` com o campo `reason` corretamente prefixado com `"Pr. Flávio Souza — "`. Ver seção "Fila automática" acima para o detalhe completo desta execução.
+
+**Extensão em 15/07/2026 — nome do pregador também no nome do arquivo final:** a pedido do usuário ("preciso que os arquivos finais dos cortes tenham o nome do pregador... exemplo: `short_08_jesus-esta-cuidando.mp4` deve ficar `short_08_Pr.-César Martins_jesus-esta-cuidando.mp4`, isso se tiver o nome no vídeo original, senão tiver pode mandar da mesma forma"), o `slug` usado para nomear o arquivo `.mp4` final (e o `_meta.json` correspondente, já que ambos reusam a mesma variável `slug`/`titleSlug`) passou a incluir o nome do pregador quando disponível:
+
+```javascript
+const titleSlug = (clip.title||'clip').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);
+const preacherSlug = preacherName ? preacherName.replace(' ', '-') : null;
+const slug = preacherSlug ? (preacherSlug + '_' + titleSlug) : titleSlug;
+```
+
+`preacherName.replace(' ', '-')` (sem flag `g`) troca só o **primeiro** espaço — o que fica logo depois de "Pr." — mantendo o restante do nome com espaços normais (ex: `"Pr. César Martins"` → `"Pr.-César Martins"`, preservando "César Martins" como está). Isso reproduz exatamente o formato pedido no exemplo do usuário. Resultado final: `outPath` (usado tanto no corte FFmpeg quanto no nome do arquivo enviado ao OneDrive via "Upload Short → OneDrive") e o nome do `_meta.json` (via "Upload Metadados → OneDrive", que reusa o mesmo `titleSlug`) ficam consistentes: `short_08_Pr.-César Martins_jesus-esta-cuidando.mp4` e `short_08_Pr.-César Martins_jesus-esta-cuidando_meta.json`.
+
+**Por que reaproveitar a variável `slug` em vez de criar um campo separado:** tanto o `outPath` local (usado no comando FFmpeg e depois no upload) quanto o `fileName` dos dois nodes de upload (`Upload Short → OneDrive` e `Upload Metadados → OneDrive`) já dependem só de `idx` + `titleSlug` (o campo carregado no item do loop) — mudar a fonte de `titleSlug` nesse único ponto do "Montar Clipes" propaga automaticamente para os três lugares onde o nome do arquivo é usado, sem precisar tocar nos nodes de upload nem no comando FFmpeg.
+
+**Segurança do shell:** o `outPath` (agora contendo espaços e um ponto no meio do nome, ex: `.../short_08_Pr.-César Martins_jesus-esta-cuidando.mp4`) é usado dentro de comandos `Execute Command` (FFmpeg, `rm -f`) — todos os usos já envolvem o valor entre aspas duplas (`"{{ $json.outPath }}"`), então espaços e caracteres acentuados não quebram o shell. Nomes de pregador não devem conter aspas, `$`, crase ou barras — os únicos caracteres esperados são letras (com acento), espaços, ponto e hífen, todos seguros dentro de aspas duplas no `/bin/sh` do Alpine.
+
+**Validado em produção (16/07/2026):** a execução #61 gerou os 8 arquivos finais no padrão esperado, ex: `short_01_Pr.-Flávio Souza_jesus-revela-quem-voce-e.mp4` e o `_meta.json` correspondente com o mesmo slug — confirmando que o `.replace(' ', '-')` de espaço único funcionou como projetado em produção, não só no teste isolado do regex. Ver seção "Fila automática" acima.
+
+---
+
+## Bug corrigido — metadados nunca eram gerados de verdade, sempre sobrescreviam os mesmos ~8 arquivos genéricos (16/07/2026)
+
+**Sintoma reportado pelo usuário:** "o meta dados não está sendo gerado no final". Verificação inicial: a pasta `Videos-Cortes/Cortes` no OneDrive tinha 50 arquivos, **todos `.mp4`, zero `.json`** — nenhum arquivo de metadados visível, apesar do node "Upload Metadados → OneDrive" reportar `executionStatus:"success"` e `error:null` em todas as 7 chamadas da execução mais recente (#58).
+
+**Diagnóstico:** inspecionando a resposta completa (não só o status) do node "Upload Metadados → OneDrive" na execução #58 via `get_execution`, o item realmente criado/atualizado no OneDrive tinha `"name": "clip_01_meta.json"` — **não** `"short_01_humildade-em-fogo_meta.json"` como o parâmetro `fileName` do node deveria produzir. Além disso, `createdDateTime` desse item era **09/07/2026**, e `lastModifiedDateTime` era a hora exata da execução #58 (16/07) — ou seja, o item já existia há uma semana e só teve o *conteúdo* atualizado, não foi criado do zero. Testando os 7 uploads da execução, todos os 7 arquivos (`clip_01_meta.json` até `clip_07_meta.json`) tinham `createdDateTime` de 08–09/07/2026, confirmando que **desde pelo menos 08/07/2026, todo vídeo processado sobrescreve os mesmos ~7-8 arquivos de metadados genéricos**, em vez de criar um arquivo novo e distinto por clipe.
+
+**Causa raiz:** o node "Upload Metadados → OneDrive" (`n8n-nodes-base.microsoftOneDrive`, `typeVersion:1`, `resource/operation` implícitos) tem um parâmetro `fileName` configurado corretamente com uma expressão (`={{ 'short_' + ... + '_meta.json' }}`), mas **esse parâmetro não é respeitado pela implementação do node** — na prática, o upload usa o nome do arquivo **local** (o `binary.data.fileName`, populado automaticamente pelo node anterior "Ler Metadados do Disco" a partir do caminho lido em disco) em vez do parâmetro explícito. Como o `metaPath` local sempre foi um nome genérico e fixo por índice (`/home/node/.n8n-files/clip_01_meta.json`, `clip_02_meta.json`, etc. — **igual em TODO vídeo processado**, já que só depende do índice do clipe, não do conteúdo), cada novo vídeo processado sobrescreve o metadado do vídeo anterior que teve o mesmo índice de clipe.
+
+**Por que isso não aconteceu com o `.mp4` (Upload Short → OneDrive):** esse node tem exatamente o mesmo problema estrutural (o parâmetro `fileName` também não é respeitado), mas nunca foi percebido porque, por coincidência, o nome do arquivo **local** do vídeo já é `short_01_humildade-em-fogo.mp4` — ou seja, `outPath` já é construído com o nome final desejado (`base+'short_'+idx+'_'+slug+'.mp4'`), então usar o nome local OU o parâmetro `fileName` dá exatamente o mesmo resultado. Isso mascarou o bug por completo — o problema só ficou visível no `_meta.json`, cujo nome local (`clip_XX_meta.json`) sempre foi diferente do nome final desejado.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):** no node "Montar Clipes", a variável `metaPath` (o caminho do arquivo de metadados **local**, na VPS) passou a usar o mesmo padrão de nome final do `outPath`, em vez de um nome genérico:
+
+```javascript
+// Antes:
+const metaPath  = base+'clip_'+idx+'_meta.json';
+
+// Depois:
+const metaPath  = base+'short_'+idx+'_'+slug+'_meta.json';
+```
+
+Isso corrige o problema **independente da causa exata** de o node ignorar o parâmetro `fileName` — como o nome local passa a ser idêntico ao nome final desejado, o upload fica correto não importa qual dos dois (parâmetro explícito ou nome do binário) a implementação do node realmente usa internamente. É o mesmo padrão que já funcionava, sem querer, para o `.mp4`.
+
+**Efeito colateral também corrigido:** antes, como só existiam ~8 nomes possíveis de metadado (`clip_01` a `clip_08`), rodar N vídeos diferentes resultava em **no máximo 8 arquivos de metadado sobrevivendo no OneDrive**, sempre pertencentes ao vídeo mais recente processado para aquele índice — todo o histórico de metadados de vídeos anteriores era silenciosamente perdido a cada execução. Com o fix, cada clipe de cada vídeo agora gera um arquivo de metadado com nome único (`short_01_pr-cesar-martins_humildade-em-fogo_meta.json`, por exemplo), preservando o histórico completo.
+
+**Arquivos órfãos remanescentes:** os ~7-8 arquivos genéricos `clip_01_meta.json` a `clip_08_meta.json` (criados entre 08–09/07, sobrescritos repetidamente até 16/07) continuam na pasta `Videos-Cortes/Cortes` com o conteúdo do último vídeo que os sobrescreveu — não foram apagados automaticamente. Podem ser removidos manualmente pelo usuário no OneDrive, ou apagados via uma limpeza pontual se solicitado.
+
+**Validado com execução real (16/07/2026):** a execução #61 gerou os 8 `_meta.json` com nomes únicos e distintos (`short_01_Pr.-Flávio Souza_..._meta.json` até `short_08_...`) — primeira vez desde 08/07/2026 que o pipeline produz metadados de verdade em vez de sobrescrever os ~8 arquivos genéricos. Ver seção "Fila automática" abaixo para o relato completo desta execução.
+
+---
+
+## Troca de modelo whisper.cpp — large-v3 → large-v3-turbo (16/07/2026)
+
+**Pedido do usuário:** "tem alguma coisa mais rapido com a mesma qualidade ou melhor que o whisper" — seguido de "pode trocar para large-v3-turbo" depois de eu explicar as opções.
+
+**Pesquisa feita antes de decidir:** duas alternativas reais de transcrição mais rápida existem hoje: (1) `faster-whisper` (biblioteca Python baseada em CTranslate2, roda no mesmo hardware — GPU ou CPU — mas com kernels mais otimizados), e (2) `whisper.cpp` com o modelo `large-v3-turbo` (variante destilada da OpenAI, lançada em outubro/2024). Descartei `faster-whisper` de cara porque exige Python (`pip install faster-whisper` + `ctranslate2`), e a VPS deste projeto roda uma imagem Alpine hardened **sem `python3`** (ver seção "Lição para o futuro" mais acima, descoberta em 13/07/2026 durante o fix do download via wget) — trocar de mecanismo de transcrição exigiria instalar um runtime Python inteiro numa imagem propositalmente minimalista, contra a natureza "hardened" do ambiente. `large-v3-turbo`, por outro lado, é só um arquivo de modelo `.bin` diferente para o mesmo binário `whisper.cpp` já instalado e funcionando — zero mudança de dependências.
+
+**O que muda tecnicamente no `large-v3-turbo`:** é uma destilação do `large-v3` — o encoder (a parte que "ouve" o áudio e entende fonética/contexto) permanece com as 32 camadas originais, intactas; só o decoder (a parte que gera o texto final a partir do que o encoder entendeu) foi reduzido de 32 para 4 camadas. Resultado: ganho de velocidade de ~6-8x em relação ao `large-v3` cheio, com perda de qualidade concentrada principalmente em cenários difíceis (múltiplos falantes sobrepostos, sotaques muito fortes, áudio com ruído de fundo pesado) — não é o perfil do áudio deste projeto (um só pregador falando, microfone de igreja, áudio limpo), então o risco de perda de qualidade perceptível é considerado baixo.
+
+**Impacto esperado no tempo de execução:** a transcrição via whisper.cpp é hoje o maior gargalo de tempo do pipeline (a análise da execução #51, por exemplo, mostrou horas de processamento majoritariamente concentradas no whisper.cpp `large-v3` com `-t 6`). Com `large-v3-turbo`, essa etapa deve cair de forma significativa — não medido ainda com um run real, mas a literatura pública sobre o modelo aponta a mesma faixa de 6-8x mencionada acima para hardware CPU-only comparável ao desta VPS (6 núcleos, sem GPU).
+
+**Descoberta feita ao tentar baixar o modelo — `/models/` não é gravável pelo usuário do n8n:** a primeira tentativa foi baixar `ggml-large-v3-turbo.bin` direto para `/models/` (mesma pasta onde `ggml-large-v3.bin` já vive), replicando o padrão de setup documentado para o modelo anterior. Um node temporário de diagnóstico (mesma técnica de "node temporário" já descrita na seção "Conexão MCP com n8n") rodando `whoami && id && ls -la /models/` revelou:
+- O processo do n8n roda como usuário `node` (uid 1000, gid 1000).
+- `/models/` pertence a `root:root` (`drwxr-xr-x`) — sem permissão de escrita para `node`. Um `touch /models/.writetest` confirmou: `Permission denied`.
+- `ggml-large-v3.bin` (o modelo atual, 3.09GB) já existe em `/models/` — provavelmente foi colocado lá manualmente por alguém com acesso root/sudo na VPS (SSH direto), não pelo próprio workflow n8n. Isso explica por que ninguém tinha notado essa limitação antes: o pipeline nunca precisou *escrever* em `/models/`, só *ler* de lá.
+- Em contraste, `/home/node/.n8n-files/` (a pasta onde todo o resto do pipeline já grava arquivos temporários — vídeo baixado, áudio extraído, SRTs, clipes cortados) tem escrita liberada para `node` (confirmado com um segundo `touch` de teste).
+
+**Decisão — baixar o modelo para `/home/node/.n8n-files/` em vez de pedir acesso root ao usuário:** em vez de interromper o trabalho para pedir que o usuário desse permissão de escrita em `/models/` (ou copiasse o arquivo manualmente via SSH), usei o mesmo node temporário para rodar `wget` direto para `/home/node/.n8n-files/ggml-large-v3-turbo.bin` — que já é gravável e já é o diretório convencionado do projeto para arquivos gerados/baixados em tempo de execução. Download concluído com sucesso: **1.624.555.275 bytes (~1.51GiB)**, em ~53 segundos (bem mais rápido que os vídeos de vários GB baixados do OneDrive, já que vem de um CDN da Hugging Face). O comando do node "Whisper.cpp Transcrever" foi então apontado para esse novo caminho:
+
+```bash
+# Antes:
+whisper -m /models/ggml-large-v3.bin -t 6 -f "{{ $json.audioPath }}" -l pt -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"
+
+# Depois:
+whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f "{{ $json.audioPath }}" -l pt -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"
+```
+
+**Por que isso é seguro mesmo sem ser o diretório "oficial" `/models/`:** o binário `whisper` só precisa do caminho apontado por `-m`, não importa em qual pasta o arquivo `.bin` está — não há nenhuma configuração implícita ou hardcoded em outro lugar que assuma `/models/` como único local válido. `/home/node/.n8n-files/` já é montado como volume persistente do container n8n (é onde `ggml-large-v3.bin` antigo NÃO está, mas onde todos os outros arquivos do pipeline sempre viveram) — o arquivo do modelo sobrevive a reinícios do container do mesmo jeito que os outros arquivos do pipeline já sobrevivem hoje. **Ponto de atenção real:** diferente de `/models/` (que parece ser um volume dedicado só para modelos, gerenciado manualmente por quem tem acesso root), `/home/node/.n8n-files/` também recebe o vídeo original baixado (vários GB) e é limpo (`rm -f`) ao fim de cada execução — o arquivo do modelo (1.51GiB, nome fixo `ggml-large-v3-turbo.bin`) nunca é alvo desse `rm -f` (os comandos de limpeza sempre referenciam caminhos específicos de vídeo/áudio/SRT/clipe daquela execução, nunca um wildcard), então não há risco de o modelo ser apagado acidentalmente por engano — mas vale ter isso em mente se um dia alguém for "limpar a pasta manualmente" pensando que só tem lixo temporário lá.
+
+**`ggml-large-v3.bin` (modelo antigo) não foi removido de `/models/`** — não há necessidade nem urgência de apagá-lo (3.09GB não é um custo de armazenamento relevante e nada mais no workflow o referencia depois desta mudança), e removê-lo exigiria acesso root que este processo não tem de qualquer forma.
+
+**Aplicado nos três lugares:**
+1. **n8n via MCP** (`ID4wisnN4Tqpt2zh`, node "Whisper.cpp Transcrever") — `updateNodeParameters`, comando trocado para o novo modelo/caminho.
+2. **`n8n-video-silence-cutter.html`** — 4 ocorrências de `ggml-large-v3.bin` atualizadas para `ggml-large-v3-turbo.bin` com o caminho `/home/node/.n8n-files/`: a descrição textual do node (linha ~184), o exemplo de código exibido na UI (linha ~186), o `command` real do node "Whisper.cpp Transcrever" na função `buildBlockWorkflow()` (linha ~825), e o `command` do node dormente "Whisper.cpp Transcrever Clipe" (linha ~868, usado só se `cfg.includeSubtitles` for reativado no futuro — legendas estão desabilitadas desde 08/07/2026, mas mantive o template consistente com o resto do código).
+3. **`workflow-blocos.json`** — mesma troca no `command` do node "Whisper.cpp Transcrever" (única ocorrência no JSON estático, já que o node de legenda por clipe foi fisicamente removido deste arquivo quando as legendas foram desabilitadas).
+
+**Node temporário de diagnóstico revertido:** o node "TEMP Checar Permissoes" (criado para descobrir o problema de permissão) foi removido do workflow após o uso, e a conexão do trigger ("Iniciar Manualmente") foi restaurada para apontar de volta ao node normal ("Resolver Pasta") — o workflow está de volta ao estado normal, executável (34 nodes, confirmado via `get_workflow_details`).
+
+**Ainda não testado com uma execução real do pipeline completo usando o novo modelo** — a próxima execução deve confirmar (a) que o whisper.cpp encontra e carrega `ggml-large-v3-turbo.bin` sem erro de "model not found", (b) o tempo real de transcrição comparado às execuções anteriores com `large-v3` (referência: execução #51 e #58, ambas usando `large-v3` cheio), e (c) se a qualidade da transcrição em português permanece boa o suficiente para os prompts de IA (PASSO 0/1/2) continuarem funcionando sem regressão perceptível.
+
+---
+
+## Análise da qualidade dos clipes (último run)
+
+Vídeo: "Quem é você depois do culto? — 14/06/2026"
+6 clipes, 58% do vídeo coberto (438s de 752s)
+
+| Clip | Trecho | Dur | Gap ant. | Score | Observação |
+|------|--------|-----|----------|-------|------------|
+| 1 | 1:03→2:06 | 63s | — | 92 | OK. Intro (0–63s) ignorada |
+| 2 | 3:34→4:38 | 64s | 88s | 94 | OK. Gap 2:06–3:34 não coberto (maior lacuna) |
+| 3 | 5:00→6:08 | 68s | 22s | 91 | OK. Próximo do clip 2 tematicamente |
+| 4 | 7:10→8:20 | 70s | 62s | 89 | Hook fraco — "Olha o Glória Deus" é reação, não abertura |
+| 5 | 9:20→10:26 | 66s | 60s | 93 | Melhor aplicação prática |
+| 6 | 10:46→12:32 | 106s | 20s | 95 | Longo (>90s); maior score |
+
+**Problema transversal:** assistindo os vídeos, todos têm cortes no meio do raciocínio (bug pendente prioritário).
+
+---
+
+## Fluxo de trabalho padrão
+
+1. Editar `n8n-video-silence-cutter.html`
+2. Abrir no browser → aba "Download" → gerar JSON (Blocos)
+3. Importar o JSON no n8n (substituir workflow anterior)
+4. Testar com vídeo real no n8n
+5. `minBlockScore` já vem em 40 por padrão (desde 09/07/2026). Se um culto específico ainda travar no "Ranking dos Blocos" (nenhum bloco qualificado), considere baixar ainda mais (30–35) só para aquele vídeo, ou aceitar que ele tem pouco conteúdo cortável.
+
+**06/07/2026:** `workflow-blocos.json` já foi regenerado com o fix do PASSO 0 (node "Mesclar Pausas Curtas") e está pronto para reimportar — não é necessário abrir o HTML no browser desta vez, a menos que quaira ajustar algum parâmetro de configuração antes.
+
+**07/07/2026:** com o n8n conectado via MCP, o fluxo mudou — fixes pontuais em prompts/Code nodes podem ser aplicados **direto no workflow em produção** (`ID4wisnN4Tqpt2zh`) via `update_workflow`, sem passar pelo HTML. `n8n-video-silence-cutter.html` e `workflow-blocos.json` continuam sendo atualizados em paralelo (retroportados manualmente) para manter os três em sincronia e preservar a opção de reimportar do zero se necessário. O fix do checklist de janelas de tempo (ver seção "Bug pendente") foi aplicado nos três lugares nesta sessão.
+
+**09/07/2026:** três novos fixes aplicados nos três lugares (n8n via MCP + HTML + `workflow-blocos.json`) na mesma sessão: (1) validação de tamanho mínimo no "Selecionar Vídeo" para evitar o bug do arquivo 0 bytes/"moov atom not found", (2) `retryOnFail` nos nodes de rede mais pesados (Baixar Vídeo, Upload Short/Metadados → OneDrive) para absorver timeouts transitórios do OneDrive, (3) `minBlockScore` padrão baixado de 70 para 40. Todos ainda aguardando validação com uma execução completa e bem-sucedida de ponta a ponta.
+
+**14/07/2026:** o workflow agora processa vídeos em fila automática — não é mais "1 vídeo por disparo manual". Ao terminar um vídeo com sucesso, ele move o original para `Videos-Cortes/Videos` e dispara sozinho a próxima execução se sobrar algum vídeo elegível na raiz `Videos-Cortes`. Ver seção "Fila automática — loop sequencial + arquivamento de vídeos processados". Para colocar um vídeo na fila, basta soltá-lo diretamente na raiz de `Videos-Cortes` (não em subpastas) — o usuário optou por manter esse controle manual em vez de o pipeline também vasculhar `Videos-Cortes/Videos` em busca de vídeos novos.
+
+**15/07/2026:** a pedido do usuário ("quando tiver o nome da pessoa incluir nome + descrição que já tem hoje nos shorts"), o node "Montar Clipes" agora extrai o nome do pregador do nome do arquivo de vídeo e prefixa no campo `reason` do `_meta.json` de cada clipe. Ver seção "Nome do pregador na descrição dos shorts" abaixo.
+
+**16/07/2026:** o modelo de transcrição foi trocado de `ggml-large-v3.bin` para `ggml-large-v3-turbo.bin`, agora carregado de `/home/node/.n8n-files/ggml-large-v3-turbo.bin` (não de `/models/`, que não é gravável pelo usuário `node` — ver seção "Troca de modelo whisper.cpp"). Se o modelo precisar ser re-baixado no futuro (ex: nova VPS, volume recriado), a URL é `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin` (~1.51GiB) e o destino deve ser `/home/node/.n8n-files/`, não `/models/`.
+
+---
+
+## Branch e estado git
+
+Branch principal de desenvolvimento: `feature/inicial`
+Branch main: `main`
+Commits sem push são criados apenas quando o usuário pede explicitamente.
