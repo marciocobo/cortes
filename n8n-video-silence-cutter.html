@@ -33,7 +33,6 @@
   .pipeline-header p{font-size:13px;color:var(--muted);line-height:1.6}
   .badge-mode{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:4px;margin-bottom:12px}
   .badge-mode.semantic{background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.3);color:var(--accent2)}
-  .badge-mode.simple{background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);color:var(--blue)}
   .badge-mode.shorts{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--red)}
   .pipeline{display:flex;flex-direction:column;gap:0}
   .node{display:flex;gap:20px;position:relative}
@@ -55,9 +54,6 @@
   .icon-code{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.3)}
   .icon-output{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3)}
   .icon-shorts{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3)}
-  .config-card.option2-only{border-color:rgba(96,165,250,.35);background:rgba(96,165,250,.04)}
-  .config-card.option2-only h3{color:var(--blue)}
-  .option2-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);color:var(--blue);margin-left:8px;vertical-align:middle}
   .icon-loop{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.3)}
 
   /* highlight box */
@@ -93,8 +89,8 @@
   .download-header{margin-bottom:24px}
   .download-header h2{font-size:22px;font-weight:600;margin-bottom:6px}
   .download-header p{font-size:13px;color:var(--muted);line-height:1.6}
-  .download-cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-bottom:28px}
-  @media(max-width:1000px){.download-cards{grid-template-columns:1fr 1fr}}
+  .download-cards{display:grid;grid-template-columns:1fr;gap:20px;margin-bottom:28px;max-width:640px}
+  
   @media(max-width:700px){.download-cards{grid-template-columns:1fr}}
   .dl-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:12px}
   .dl-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -132,14 +128,8 @@
 </header>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('pipeline1')" id="tab-pipeline1">
-    🧠 Opção 1 — Semântico <span class="tab-badge">Whisper + Claude</span>
-  </div>
-  <div class="tab" onclick="switchTab('pipeline2')" id="tab-pipeline2">
-    ⚡ Opção 2 — Simples <span class="tab-badge">FFmpeg + Whisper.cpp local</span>
-  </div>
-  <div class="tab" onclick="switchTab('pipeline3')" id="tab-pipeline3">
-    🔬 Opção 3 — Blocos <span class="tab-badge">Whisper + IA × 2 passes</span>
+  <div class="tab active" onclick="switchTab('pipeline3')" id="tab-pipeline3">
+    🔬 Pipeline — Blocos <span class="tab-badge">Whisper + IA × 2 passes</span>
   </div>
   <div class="tab" onclick="switchTab('config')" id="tab-config">
     ⚙️ Configurar
@@ -149,315 +139,8 @@
   </div>
 </div>
 
-<!-- ══════════════════ PIPELINE 1 ══════════════════ -->
-<div class="content active" id="content-pipeline1">
-<div class="pipeline-section">
-  <div class="pipeline-header">
-    <div class="badge-mode shorts">🎬 SHORTS GENERATOR — Claude + Whisper.cpp local + FFmpeg</div>
-    <h2>Identificação Semântica de até 5 Melhores Momentos</h2>
-    <p>O vídeo inteiro é transcrito <b>localmente com whisper.cpp</b> (sem OpenAI). Um motor de IA configurável (Claude, Ollama local ou nenhum) lê essa transcrição completa (em SRT, com timestamps) e decide <em>quais até 5 trechos</em> fazem sentido como Shorts — não apenas por duração, mas por coesão de ideia, gancho de abertura e conclusão clara. Cada Short gerado vem com um arquivo de metadados JSON com o hook e o motivo da escolha. Único custo de API possível: <b>Anthropic Claude</b> (opcional — pode ser substituído por Ollama local, $0).</p>
-  </div>
-
-  <div class="info-box">
-    <strong>🧠 Como o Claude identifica os cortes</strong>
-    Ele analisa mudanças de assunto, frases com gancho ("O erro mais comum é..."), conclusões naturais e pausas longas que coincidem com transições de ideia. Retorna no máximo <b>5 clipes</b>, cada um com <b>hook</b> (frase de abertura para usar na capa/descrição) e <b>reason</b> (justificativa editorial). Os cortes nunca ocorrem no meio de uma frase — sempre em pausa de fala detectada na transcrição.
-  </div>
-
-  <div class="info-box">
-    <strong>🔁 Motor de escolha dos clipes (aba ⚙️ Configurar)</strong>
-    Um seletor na aba Configurar define como <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Montar Clipes</code> escolhe os trechos:
-    <br><br>
-    <b>• Claude</b> (padrão) — o fluxo acima é gerado na íntegra: whisper.cpp transcreve o vídeo inteiro e o Claude (Anthropic) escolhe até <b>5 clipes</b> com hook/reason.
-    <br><br>
-    <b>• Ollama (local)</b> — mesma transcrição completa via whisper.cpp, mas a etapa <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude — Gerar Clipes</code> é substituída por <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Ollama — Gerar Clipes</code> (HTTP POST para <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">http://ollama:11434/api/generate</code>, body <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">{"model":"llama3.1:8b","prompt":"...","stream":false}</code>), usando o mesmo prompt e retornando hook/reason — mas com até <b>5 clipes</b>. Zero custo de API.
-    <br><br>
-    <b>• Nenhum</b> — os nodes de transcrição completa e a chamada de IA (<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Whisper Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Whisper.cpp Transcrever Completo</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Claude/Ollama</code> e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Claude/Ollama — Gerar Clipes</code>) são removidos. <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Preparar Caminhos</code> segue direto para <b>FFprobe + Silêncios</b> (igual à Opção 2), e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Montar Clipes</code> agrupa por <b>detecção de silêncio</b>, gerando <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">hook</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">reason</code> vazios no <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code>.
-    <br><br>
-    Em todos os modos, as legendas por clipe (whisper.cpp local) e o upload de Short + metadados continuam funcionando normalmente.
-  </div>
-
-  <div class="pipeline">
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-trigger">🔔</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">OneDrive Trigger — novo vídeo</span><span class="node-type">OneDrive Trigger</span></div>
-        <p class="node-desc">Monitora a pasta configurada. Dispara ao detectar um arquivo novo com mimeType de vídeo.</p>
-        <div class="node-code"><span class="code-key">Event:</span> <span class="code-val">File Created</span>
-<span class="code-key">Folder:</span> <span class="code-str">{{ config.onedriveFolderId }}</span>
-<span class="code-key">Poll:</span> <span class="code-val">Every 1 minute</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-trigger">⬇️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Baixar + Salvar na VPS</span><span class="node-type">OneDrive → Write Binary File</span></div>
-        <p class="node-desc">Download do arquivo e persistência em <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/home/node/.n8n-files/</code> para processamento local.</p>
-        <div class="node-code"><span class="code-key">Operation:</span> <span class="code-val">Download</span>  |  <span class="code-key">File ID:</span> <span class="code-str">{{ $json.id }}</span>
-<span class="code-key">Write to:</span> <span class="code-str">/home/node/.n8n-files/{{ $json.name }}</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-ffmpeg">📏</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Preparar Caminhos + FFprobe + Extrair Áudio Completo</span><span class="node-type">Code Node + Execute Command</span></div>
-        <p class="node-desc">Um <b>Code Node</b> monta os paths em JavaScript puro. O <b>Execute Command</b> seguinte mede a duração total (ffprobe) e extrai o áudio do vídeo inteiro em WAV 16kHz mono, em um único comando.</p>
-        <div class="node-code"><span class="code-comment">// Code Node — Preparar Caminhos</span>
-<span class="code-fn">const</span> t = $(<span class="code-str">'OneDrive Trigger'</span>).first().json;
-<span class="code-fn">const</span> base = <span class="code-str">'/home/node/.n8n-files/'</span>;
-<span class="code-fn">return</span> [{ json: {
-  videoName: t.name,
-  videoPath: base + t.name,
-  audioPath: base + <span class="code-str">'audio_full.wav'</span>
-}}];
-
-<span class="code-comment">// Execute Command — FFprobe + Extrair Áudio</span>
-DUR=$(<span class="code-fn">ffprobe</span> -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 <span class="code-str">"{{ $json.videoPath }}"</span>) \
-&& echo <span class="code-str">"DURATION:$DUR"</span> \
-&& <span class="code-fn">ffmpeg</span> -y -i <span class="code-str">"{{ $json.videoPath }}"</span> -vn -acodec pcm_s16le -ar 16000 -ac 1 <span class="code-str">"{{ $json.audioPath }}"</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-whisper">🎙️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Whisper.cpp Transcrever Vídeo Completo</span><span class="node-type">Code (parse DURATION) + Execute Command</span></div>
-        <p class="node-desc">Transcreve o áudio inteiro <b>localmente</b> com whisper.cpp (modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-small.bin</code>), gerando um <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> com timestamps de todo o vídeo. O comando faz <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">cat</code> do .srt para que o conteúdo vá direto para o próximo node via <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">stdout</code>. <b>Sem OpenAI, custo $0.</b></p>
-        <div class="node-code"><span class="code-fn">whisper</span> -m /models/ggml-small.bin -f <span class="code-str">"{{ $json.audioPath }}"</span> \
-  -l pt -osrt -of <span class="code-str">"{{ $json.srtBase }}"</span> -np \
-  && <span class="code-fn">cat</span> <span class="code-str">"{{ $json.srtPath }}"</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-claude">🤖</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Claude — Gerar até 5 Clipes</span><span class="node-type">HTTP Request Node → Anthropic API</span></div>
-        <p class="node-desc">Claude recebe a transcrição completa em SRT (com timestamps) e a duração total, e identifica semanticamente os melhores trechos para Shorts — <b>no máximo 5</b>. Cada clipe retornado inclui <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">hook</code> e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">reason</code>. Os cortes nunca ocorrem no meio de uma frase.</p>
-        <div class="node-code"><span class="code-key">system:</span> <span class="code-str">"Você é um editor sênior de YouTube Shorts.
-Analise a transcrição em formato SRT (com timestamps)
-e identifique até 5 dos MELHORES momentos para Shorts
-de 30–70s (ideal 40–70s). Cada clipe deve ser:
-
-1. AUTOCONTIDO — entendível sem ver o resto do vídeo
-2. Com GANCHO nos primeiros 3s
-3. Com CONCLUSÃO clara no final
-4. Semanticamente coeso
-5. Início e fim sempre em PAUSA DE FALA
-
-Retorne APENAS JSON válido (sem markdown), no máximo
-4 itens, do melhor para o pior:
-[{
-  "start": 12.4,
-  "end": 98.7,
-  "title": "slug-curto-do-tema",
-  "hook": "Frase exata de abertura do clipe",
-  "reason": "Por que este trecho funciona como Short"
-}, ...]"</span>
-
-<span class="code-key">content:</span> <span class="code-str">"Duração total: {{ $json.duration }}s
-Transcrição (SRT):
-{{ $json.transcript }}"</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-code">🗂️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Montar Clipes (até 5, 30–70s)</span><span class="node-type">Code Node (JavaScript)</span></div>
-        <p class="node-desc">Parseia o JSON retornado pelo Claude, valida durações (30–70s) e limita a <b>5 clipes</b> (<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.slice(0,5)</code>). Monta os paths de cada clipe — <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">audioPath</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">srtPath</code> (legendas, se habilitado) e <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">metaContent</code> (hook, reason, duração). Retorna <b>1 item por clipe</b>.</p>
-        <div class="node-code"><span class="code-comment">// Claude retorna ex:
-// [{ start: 45.2, end: 187.9, title: "erro-mais-comum",
-//    hook: "90% das pessoas erra isso",
-//    reason: "Afirmação forte + solução prática" }, ...]
-//   .slice(0, 5)  → no máximo 5 clipes
-//
-// Code Node → gera por clipe:
-//   outPath, audioPath, srtBase, srtPath (se incluirLegendas)
-//   metaPath + metaContent → { hook, reason, duration, title }</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-loop">🔁</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Loop Over Items (1 clipe por vez)</span><span class="node-type">Split In Batches (batchSize=1)</span></div>
-        <p class="node-desc">Garante que cada clipe (até 5) seja processado e enviado ao OneDrive <b>individualmente, em sequência</b> — evita rodar vários ffmpeg/whisper em paralelo na VPS. Quando todos os clipes são processados, o output "done" finaliza o workflow.</p>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-whisper">🎙️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">[Se incluirLegendas] Extrair Áudio + Whisper.cpp do Clipe</span><span class="node-type">Execute Command (×2) + Code (pass-through)</span></div>
-        <p class="node-desc">Extrai apenas o trecho do clipe em WAV 16kHz mono, depois transcreve <b>localmente</b> com whisper.cpp (modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-small.bin</code>), gerando o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> do clipe. <b>Toda essa etapa é pulada se legendas estiverem desabilitadas.</b></p>
-        <div class="node-code"><span class="code-comment">// Extrair Áudio do Clipe</span>
-<span class="code-fn">ffmpeg</span> -y -ss <span class="code-str">"{{ $json.clipStart }}"</span> -to <span class="code-str">"{{ $json.clipEnd }}"</span> \
-  -i <span class="code-str">"{{ $json.videoPath }}"</span> -vn -acodec pcm_s16le -ar 16000 -ac 1 <span class="code-str">"{{ $json.audioPath }}"</span>
-
-<span class="code-comment">// Whisper.cpp Transcrever (sem API, sem custo)</span>
-<span class="code-fn">whisper</span> -m /models/ggml-small.bin -f <span class="code-str">"{{ $json.audioPath }}"</span> \
-  -l pt -osrt -of <span class="code-str">"{{ $json.srtBase }}"</span> -np</div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-ffmpeg">✂️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">FFmpeg Cortar 9:16 (+ Legenda, se habilitado)</span><span class="node-type">Execute Command Node</span></div>
-        <p class="node-desc">Salva o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code> (hook + reason do Claude) no disco, recorta o trecho exato e converte para 1080×1920 (9:16, crop centralizado sem barras pretas) — e, se <b>incluirLegendas=true</b>, queima a legenda do <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> gerado pelo whisper.cpp.</p>
-        <div class="node-code"><span class="code-fn">printf</span> '%s' <span class="code-str">'{{ $json.metaContent }}'</span> > <span class="code-str">"{{ $json.metaPath }}"</span> && \
-<span class="code-fn">ffmpeg</span> -y -ss <span class="code-str">"{{ $json.clipStart }}"</span> -to <span class="code-str">"{{ $json.clipEnd }}"</span> \
-  -i <span class="code-str">"{{ $json.videoPath }}"</span> \
-  -vf <span class="code-str">"scale=-2:1920,crop=1080:1920:(iw-1080)/2:(ih-1920)/2
-       [, subtitles={{ $json.srtPath }}:force_style='FontName=Poppins,Bold=1,FontSize=18,...,BorderStyle=0,Outline=0,Shadow=1,MarginV=30']"</span> \
-  -c:v libx264 -preset fast -crf 22 \
-  -c:a aac -b:a 128k -movflags +faststart \
-  <span class="code-str">"{{ $json.outPath }}"</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-output">📤</div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Ler do Disco + Upload Short + Metadados → volta ao Loop</span><span class="node-type">Read Binary File + OneDrive (×2)</span></div>
-        <p class="node-desc">Lê o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">short_NN_&lt;slug&gt;.mp4</code> e o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">_meta.json</code> gerados, envia ambos para a pasta do OneDrive e volta para o <b>Loop Over Items</b> até processar todos os clipes (no máximo 5).</p>
-        <div class="node-code"><span class="code-comment">// Upload 1: o vídeo Short</span>
-<span class="code-key">Name:</span> <span class="code-str">={{ 'short_' + idx + '_' + titleSlug + '.mp4' }}</span>
-
-<span class="code-comment">// Upload 2: metadados do clipe</span>
-<span class="code-key">Name:</span> <span class="code-str">={{ 'short_' + idx + '_' + titleSlug + '_meta.json' }}</span>
-<span class="code-key">Parent Folder:</span> <span class="code-str">{{ config.onedriveFolderId }}</span></div>
-      </div>
-    </div>
-
-  </div>
-</div>
-</div>
-
-<!-- ══════════════════ PIPELINE 2 ══════════════════ -->
-<div class="content" id="content-pipeline2">
-<div class="pipeline-section">
-  <div class="pipeline-header">
-    <div class="badge-mode simple">⚡ MODO SIMPLES — FFmpeg silencedetect + Whisper.cpp local</div>
-    <h2>Shorts via Silêncio de Áudio (sem APIs pagas)</h2>
-    <p>Detecta silêncios por volume (dB), agrupa segmentos de fala em janelas de 30–70s, converte para 9:16 com crop centralizado, e — se habilitado — transcreve cada clipe com <b>whisper.cpp local</b> (modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-small</code>) para queimar a legenda. Custo de API: <b>$0</b>.</p>
-  </div>
-
-  <div class="info-box">
-    <strong>⚡ Diferença desta opção</strong>
-    Sem Claude para análise semântica — os clipes são formados por agrupamento sequencial de blocos de fala até atingir a janela de duração desejada. A legenda (quando habilitada) usa whisper.cpp rodando localmente na VPS, sem depender da API da OpenAI. Cada clipe é processado <b>um por vez</b> via <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Loop Over Items</code>, evitando sobrecarga de CPU.
-  </div>
-
-  <div class="pipeline">
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-trigger">🔔</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">OneDrive Trigger</span><span class="node-type">OneDrive Trigger</span></div>
-        <p class="node-desc">Monitora a pasta configurada e dispara com os metadados do vídeo a cada novo arquivo.</p>
-        <div class="node-code"><span class="code-key">Event:</span> <span class="code-val">File Created</span>  |  <span class="code-key">Folder:</span> <span class="code-str">{{ config.onedriveFolderId }}</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-trigger">⬇️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Baixar + Salvar na VPS</span><span class="node-type">OneDrive → Write Binary File</span></div>
-        <p class="node-desc">Salva em <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/home/node/.n8n-files/</code>.</p>
-        <div class="node-code"><span class="code-key">Write to:</span> <span class="code-str">/home/node/.n8n-files/{{ $json.name }}</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-code">🔧</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Paths: Vídeo + FFprobe + Detectar Silêncios</span><span class="node-type">Code Node + Execute Command</span></div>
-        <p class="node-desc">Um <b>Code Node</b> monta <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">videoPath</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">videoName</code>. O Execute Command seguinte mede a duração total (ffprobe) e detecta silêncios (ffmpeg silencedetect) em um único comando.</p>
-        <div class="node-code"><span class="code-comment">// Code Node — Paths: Vídeo</span>
-<span class="code-fn">const</span> t = $(<span class="code-str">'OneDrive Trigger'</span>).first().json;
-<span class="code-fn">const</span> base = <span class="code-str">'/home/node/.n8n-files/'</span>;
-<span class="code-fn">return</span> [{ json: { videoName: t.name, videoPath: base + t.name }}];
-
-<span class="code-comment">// Execute Command — FFprobe + Silêncios</span>
-DUR=$(<span class="code-fn">ffprobe</span> -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 <span class="code-str">"{{ $json.videoPath }}"</span>) \
-&& echo <span class="code-str">"DURATION:$DUR"</span> \
-&& <span class="code-fn">ffmpeg</span> -i <span class="code-str">"{{ $json.videoPath }}"</span> -af <span class="code-str">'silencedetect=noise=-30dB:d=0.4'</span> -f null - 2>&1 \
-   | grep -E <span class="code-str">"silence_start|silence_end"</span> || true</div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-code">🔧</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Montar Clipes (30–70s)</span><span class="node-type">Code Node (JavaScript)</span></div>
-        <p class="node-desc">Parseia os silêncios, agrupa blocos de fala em clipes de 30–70s, e monta os paths de cada clipe — incluindo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">audioPath</code>/<code style="font-family:var(--mono);color:var(--accent2);font-size:11px">srtPath</code> quando legendas estão habilitadas. Retorna <b>1 item por clipe</b>.</p>
-        <div class="node-code"><span class="code-fn">const</span> idx = String(cl.length+1).padStart(<span class="code-val">2</span>,<span class="code-str">'0'</span>);
-<span class="code-fn">const</span> outPath   = <span class="code-str">'/home/node/.n8n-files/short_'</span>+idx+<span class="code-str">'.mp4'</span>;
-<span class="code-comment">// se incluirLegendas:</span>
-<span class="code-fn">const</span> audioPath = <span class="code-str">'/home/node/.n8n-files/clip_'</span>+idx+<span class="code-str">'.wav'</span>;
-<span class="code-fn">const</span> srtPath   = <span class="code-str">'/home/node/.n8n-files/clip_'</span>+idx+<span class="code-str">'.srt'</span>;
-cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srtPath });</div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-loop">🔁</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Loop Over Items (1 clipe por vez)</span><span class="node-type">Split In Batches (batchSize=1)</span></div>
-        <p class="node-desc">Garante que cada clipe seja processado (e enviado ao OneDrive) <b>individualmente, em sequência</b> — evita rodar vários ffmpeg/whisper em paralelo na VPS. Quando todos os clipes são processados, o output "done" finaliza o workflow.</p>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-whisper">🎙️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">[Se incluirLegendas] Extrair Áudio + Whisper.cpp</span><span class="node-type">Execute Command (×2) + Code (pass-through)</span></div>
-        <p class="node-desc">Extrai apenas o trecho do clipe em WAV 16kHz mono, depois transcreve <b>localmente</b> com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">whisper</code> (whisper.cpp, modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-small.bin</code>), gerando o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code>. <b>Toda essa etapa é pulada se legendas estiverem desabilitadas.</b></p>
-        <div class="node-code"><span class="code-comment">// Extrair Áudio do Clipe</span>
-<span class="code-fn">ffmpeg</span> -y -ss <span class="code-str">"{{ $json.clipStart }}"</span> -to <span class="code-str">"{{ $json.clipEnd }}"</span> \
-  -i <span class="code-str">"{{ $json.videoPath }}"</span> -vn -acodec pcm_s16le -ar 16000 -ac 1 <span class="code-str">"{{ $json.audioPath }}"</span>
-
-<span class="code-comment">// Whisper.cpp Transcrever (sem API, sem custo)</span>
-<span class="code-fn">whisper</span> -m /models/ggml-small.bin -f <span class="code-str">"{{ $json.audioPath }}"</span> \
-  -l pt -osrt -of <span class="code-str">"{{ $json.srtBase }}"</span> -np</div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-ffmpeg">✂️</div><div class="node-connector"></div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">FFmpeg Cortar 9:16 (+ Legenda, se habilitado)</span><span class="node-type">Execute Command Node</span></div>
-        <p class="node-desc">Recorta o clipe do vídeo original, escala/recorta para 1080×1920 (9:16, crop centralizado sem barras pretas) e — se <b>incluirLegendas=true</b> — queima a legenda do <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> gerado pelo whisper.cpp.</p>
-        <div class="node-code"><span class="code-fn">ffmpeg</span> -y -ss <span class="code-str">"{{ $json.clipStart }}"</span> -to <span class="code-str">"{{ $json.clipEnd }}"</span> \
-  -i <span class="code-str">"{{ $json.videoPath }}"</span> \
-  -vf <span class="code-str">"scale=-2:1920,crop=1080:1920:(iw-1080)/2:(ih-1920)/2
-       [, subtitles={{ $json.srtPath }}:force_style='FontName=Poppins,Bold=1,FontSize=18,...,BorderStyle=0,Outline=0,Shadow=1,MarginV=30']"</span> \
-  -c:v libx264 -preset fast -crf 22 \
-  -c:a aac -b:a 128k -movflags +faststart \
-  <span class="code-str">"{{ $json.outPath }}"</span></div>
-      </div>
-    </div>
-
-    <div class="node">
-      <div class="node-line"><div class="node-icon icon-output">📤</div></div>
-      <div class="node-body">
-        <div class="node-header"><span class="node-name">Ler do Disco + Upload → OneDrive → volta ao Loop</span><span class="node-type">Read Binary File + OneDrive</span></div>
-        <p class="node-desc">Lê o <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">short_XX.mp4</code> gerado, envia para a pasta do OneDrive com nome <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">short_01.mp4</code>, <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">short_02.mp4</code>... e volta para o <b>Loop Over Items</b> até processar todos os clipes.</p>
-        <div class="node-code"><span class="code-key">Operation:</span> <span class="code-val">Upload</span>
-<span class="code-key">Name:</span> <span class="code-str">={{ 'short_' + $('Preparar Leitura').item.json.idx + '.mp4' }}</span>
-<span class="code-key">Parent Folder:</span> <span class="code-str">{{ config.onedriveFolderId }}</span></div>
-      </div>
-    </div>
-
-  </div>
-</div>
-</div>
-
 <!-- ══════════════════ PIPELINE 3 ══════════════════ -->
-<div class="content" id="content-pipeline3">
+<div class="content active" id="content-pipeline3">
 <div class="pipeline-section">
   <div class="pipeline-header">
     <div class="badge-mode semantic">🔬 BLOCOS — Whisper local + IA em 2 passes (Claude / GPT-4o / Gemini)</div>
@@ -498,9 +181,9 @@ cl.push({ clipStart, clipEnd, idx, videoPath, videoName, outPath, audioPath, srt
       <div class="node-line"><div class="node-icon icon-whisper">🎙️</div><div class="node-connector"></div></div>
       <div class="node-body">
         <div class="node-header"><span class="node-name">FFprobe + Extrair Áudio → Whisper.cpp Transcrever Completo</span><span class="node-type">Execute Command (×2) + Code Node</span></div>
-        <p class="node-desc">Mede duração (ffprobe), extrai WAV 16kHz mono do vídeo inteiro, e transcreve <b>localmente</b> com whisper.cpp (modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-small.bin</code>) gerando um <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> com todos os timestamps. <b>Sem OpenAI. Custo $0.</b></p>
+        <p class="node-desc">Mede duração (ffprobe), extrai WAV 16kHz mono do vídeo inteiro, e transcreve <b>localmente</b> com whisper.cpp (modelo <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ggml-large-v3-turbo.bin</code>, 6 threads) gerando um <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">.srt</code> com todos os timestamps. <b>Sem OpenAI. Custo $0.</b></p>
         <div class="node-code"><span class="code-fn">ffmpeg</span> -y -i <span class="code-str">"{{ $json.videoPath }}"</span> -vn -acodec pcm_s16le -ar 16000 -ac 1 <span class="code-str">"{{ $json.audioPath }}"</span>
-<span class="code-fn">whisper</span> -m /models/ggml-small.bin -f <span class="code-str">"{{ $json.audioPath }}"</span> \
+<span class="code-fn">whisper</span> -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f <span class="code-str">"{{ $json.audioPath }}"</span> \
   -l pt -osrt -of <span class="code-str">"{{ $json.srtBase }}"</span> -np && cat <span class="code-str">"{{ $json.srtPath }}"</span></div>
       </div>
     </div>
@@ -608,15 +291,14 @@ Leia TODA a transcrição antes de decidir.
   <div class="config-card">
     <h3>🔑 Credenciais</h3>
     <div class="field">
-      <label>Opção 1: motor de escolha dos melhores momentos</label>
+      <label>Motor de IA</label>
       <select id="ai-engine" onchange="updateCfg()">
-        <option value="gemini">Gemini (Google — pago, foco viral)</option>
-        <option value="claude">Claude (Anthropic — pago)</option>
-        <option value="openai">GPT-4o (OpenAI — pago)</option>
-        <option value="ollama">Ollama (modelo local — grátis)</option>
-        <option value="none" selected>Nenhum — agrupar por silêncio (igual Opção 2)</option>
+        <option value="gemini">Gemini (Google — foco viral)</option>
+        <option value="claude">Claude (Anthropic)</option>
+        <option value="openai" selected>GPT-4o (OpenAI)</option>
+        <option value="none">Nenhum (sem IA)</option>
       </select>
-      <div class="field-hint">Define como a Opção 1 e a Opção 3 escolhem os clipes. "GPT-4o" usa a API da OpenAI. "Ollama" usa modelo local na VPS (apenas Opção 1). "Nenhum" agrupa por silêncio.</div>
+      <div class="field-hint">Define qual IA analisa os blocos e seleciona os clipes. "GPT-4o" usa a API da OpenAI. "Gemini" usa o Google AI Studio.</div>
     </div>
     <div class="field" id="gemini-key-field" style="display:none">
       <label>Google Gemini API Key</label>
@@ -626,27 +308,22 @@ Leia TODA a transcrição antes de decidir.
     <div class="field" id="anthropic-key-field" style="display:none">
       <label>Anthropic API Key (Claude)</label>
       <input type="password" id="anthropic-key" placeholder="sk-ant-..." oninput="updateCfg()">
-      <div class="field-hint">Necessário se o motor for "Claude". Usado na Opção 1 e Opção 3.</div>
+      <div class="field-hint">Necessário se o motor for "Claude".</div>
     </div>
-    <div class="field" id="openai-key-field" style="display:none">
+    <div class="field" id="openai-key-field">
       <label>OpenAI API Key (GPT-4o)</label>
-      <input type="password" id="openai-key" placeholder="sk-..." oninput="updateCfg()">
-      <div class="field-hint">Necessário se o motor for "GPT-4o". Usado na Opção 3 (2 chamadas por vídeo). Transcrição e corte continuam locais — sem custo de API adicional.</div>
-    </div>
-    <div class="field" id="ollama-url-field" style="display:none">
-      <label>Ollama URL (endpoint da API)</label>
-      <input type="text" id="ollama-url" placeholder="http://ollama:11434/api/generate" value="http://ollama:11434/api/generate" oninput="updateCfg()">
-      <div class="field-hint">Endpoint completo (com <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">/api/generate</code>) do Ollama na VPS. <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ollama</code> é o nome do serviço/host na rede Docker — ajuste conforme sua rede.</div>
-    </div>
-    <div class="field" id="ollama-model-field" style="display:none">
-      <label>Ollama — modelo</label>
-      <input type="text" id="ollama-model" placeholder="llama3.1:8b" value="llama3.1:8b" oninput="updateCfg()">
-      <div class="field-hint">Modelo já baixado na VPS via <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">ollama pull</code>.</div>
+      <input type="password" id="openai-key" value="" placeholder="sk-proj-..." oninput="updateCfg()">
+      <div class="field-hint">Necessário se o motor for "GPT-4o". 2 chamadas por vídeo. Transcrição e corte continuam locais — sem custo de API adicional.</div>
     </div>
     <div class="field">
-      <label>OneDrive Folder Path</label>
+      <label>Pasta de entrada (OneDrive)</label>
       <input type="text" id="onedrive-folder" value="Videos-Cortes" placeholder="Videos-Cortes" oninput="updateCfg()">
-      <div class="field-hint">Caminho da pasta no OneDrive (entrada + saída). No n8n, selecione esta pasta no node OneDrive Trigger após importar.</div>
+      <div class="field-hint">Pasta onde os vídeos originais ficam. O workflow monitora esta pasta para processar novos arquivos.</div>
+    </div>
+    <div class="field">
+      <label>Pasta de saída — upload dos cortes</label>
+      <input type="text" id="output-folder" value="Videos-Cortes/Cortes" placeholder="Videos-Cortes/Cortes" oninput="updateCfg()">
+      <div class="field-hint">Pasta do OneDrive onde os Shorts gerados serão enviados. Ex: <code style="font-family:var(--mono);color:var(--accent2);font-size:11px">Videos-Cortes/Cortes</code></div>
     </div>
   </div>
 
@@ -663,35 +340,13 @@ Leia TODA a transcrição antes de decidir.
       <div class="field-hint">Máximo absoluto. Ideal: 40–70s para melhor retenção em Shorts.</div>
     </div>
     <div class="field">
-      <label>Nota mínima dos blocos <span class="option2-badge" style="margin-left:6px">somente Opção 3</span></label>
-      <input type="number" id="min-block-score" value="70" min="30" max="95" step="5" oninput="updateCfg()">
+      <label>Nota mínima dos blocos</label>
+      <input type="number" id="min-block-score" value="40" min="30" max="95" step="5" oninput="updateCfg()">
       <div class="field-hint">Blocos abaixo desta nota são descartados antes do 2º passo de IA. Reduza para 40–55 em sermões, palestras ou narração lenta.</div>
     </div>
     <div class="range-display" id="range-display">🎯 Alvo: 30s → 70s (ideal 40–70s)</div>
   </div>
 
-  <div class="config-card option2-only">
-    <h3>⚡ Detecção de Silêncio <span class="option2-badge">somente Opção 2</span></h3>
-    <div class="info-box" style="margin-bottom:16px;font-size:12px">
-      <strong>Usado exclusivamente na Opção 2</strong>
-      As Opções 1 e 3 identificam cortes via IA (transcrição + contexto semântico) e não utilizam estes parâmetros.
-    </div>
-    <div class="field">
-      <label>Limiar de volume (dB)</label>
-      <input type="number" id="noise-db" value="-30" min="-50" max="-15" step="1" oninput="updateCfg()">
-      <div class="field-hint">-30dB é padrão. Ambientes ruidosos: -25dB. Mic profissional: -40dB.</div>
-    </div>
-    <div class="field">
-      <label>Pausa mínima para cortar (segundos)</label>
-      <input type="number" id="min-silence" value="0.4" min="0.2" max="2.0" step="0.1" oninput="updateCfg()">
-      <div class="field-hint">Pausas menores são ignoradas (respirações, etc).</div>
-    </div>
-    <div class="field">
-      <label>Margem de frames (segundos)</label>
-      <input type="number" id="margin" value="0.15" min="0.0" max="0.5" step="0.05" oninput="updateCfg()">
-      <div class="field-hint">Recuo aplicado no início e fim de cada corte para evitar corte seco.</div>
-    </div>
-  </div>
 
   <div class="config-card">
     <h3>🔤 Legendas</h3>
@@ -702,15 +357,15 @@ Leia TODA a transcrição antes de decidir.
         <option value="en">Inglês</option>
         <option value="es">Espanhol</option>
       </select>
-      <div class="field-hint">Usado em todas as opções para transcrição local com whisper.cpp.</div>
+      <div class="field-hint">Idioma usado pela transcrição local com whisper.cpp.</div>
     </div>
     <div class="toggle-row">
       <div>
         <div class="toggle-label">Incluir legendas queimadas</div>
-        <div class="toggle-hint">Opção 2: usa whisper.cpp local (sem API). Opção 1: usa o .srt gerado a partir do Whisper.</div>
+        <div class="toggle-hint">whisper.cpp local (sem API). Gera legenda queimada no clipe final.</div>
       </div>
       <label class="switch">
-        <input type="checkbox" id="include-subtitles" checked oninput="updateCfg()">
+        <input type="checkbox" id="include-subtitles" oninput="updateCfg()">
         <span class="slider"></span>
       </label>
     </div>
@@ -732,7 +387,7 @@ Leia TODA a transcrição antes de decidir.
       <input type="number" id="margin-v" value="30" min="10" max="200" step="2" oninput="updateCfg()">
       <div class="field-hint">Distância da legenda em relação à borda inferior.</div>
     </div>
-    <div class="field-hint">Quando desativado, a Opção 2 pula completamente as etapas de extração de áudio e whisper.cpp — gera apenas o corte 9:16, mais rápido e sem uso de CPU extra.</div>
+    <div class="field-hint">Quando desativado, pula whisper.cpp — gera apenas o corte 9:16, mais rápido e sem uso de CPU extra.</div>
   </div>
 
   <div class="config-card">
@@ -746,29 +401,6 @@ Leia TODA a transcrição antes de decidir.
       <input type="number" id="height" value="1920" min="1280" max="1920" step="1" oninput="updateCfg()">
     </div>
 
-    <div class="steps-list">
-      <div class="step">
-        <span class="step-num">📋</span>
-        <div class="step-content">
-          <strong>Como importar no n8n</strong>
-          <span>Download do JSON → n8n → ⋮ menu → Import from File → adicione as credenciais OneDrive (e Anthropic na Opção 1).</span>
-        </div>
-      </div>
-      <div class="step">
-        <span class="step-num">📁</span>
-        <div class="step-content">
-          <strong>Permissão de pasta na VPS</strong>
-          <span><code style="font-family:var(--mono);color:var(--accent2);font-size:11px">chmod 755 /home/node/.n8n-files</code> para que o n8n consiga escrever os arquivos temporários.</span>
-        </div>
-      </div>
-      <div class="step">
-        <span class="step-num">🎬</span>
-        <div class="step-content">
-          <strong>Teste</strong>
-          <span>Coloque um vídeo MP4 na pasta do OneDrive. Em até 1 minuto o workflow dispara e os Shorts aparecem na mesma pasta.</span>
-        </div>
-      </div>
-    </div>
   </div>
 
 </div>
@@ -799,47 +431,13 @@ Leia TODA a transcrição antes de decidir.
       </div>
       <button class="btn btn-primary btn-full" onclick="downloadWorkflow('block')">⬇️ Baixar workflow-shorts-block.json</button>
     </div>
-    <div class="dl-card" style="opacity:0.45">
-      <div class="dl-card-header">
-        <div>
-          <h3>🧠 Opção 1 — Semântico</h3>
-          <p>Whisper.cpp local transcreve o vídeo inteiro; um motor de IA configurável (Claude, Ollama local ou nenhum — aba ⚙️ Configurar) identifica até 5 dos melhores momentos, com gancho, conclusão clara e autocontido. Legendas via whisper.cpp local (opcional). Sem OpenAI. "Nenhum" cai no agrupamento por silêncio (igual à Opção 2).</p>
-        </div>
-        <div class="dl-card-icon">🤖</div>
-      </div>
-      <div class="dl-meta">
-        <span class="dl-tag">12 nodes</span>
-        <span class="dl-tag">OneDrive</span>
-        <span class="dl-tag">Claude semântico</span>
-        <span class="dl-tag hot">9:16 + Legendas opcionais</span>
-      </div>
-      <button class="btn btn-full" disabled style="opacity:0.4;cursor:not-allowed">🔒 Opção 1 bloqueada — use Opção 3</button>
-    </div>
-    <div class="dl-card" style="opacity:0.45">
-      <div class="dl-card-header">
-        <div>
-          <h3>⚡ Opção 2 — Simples</h3>
-          <p>Agrupamento por silêncios de áudio + Loop Over Items (1 clipe por vez). Legendas via whisper.cpp local (opcional) — $0 de API.</p>
-        </div>
-        <div class="dl-card-icon">🎞️</div>
-      </div>
-      <div class="dl-meta">
-        <span class="dl-tag">FFmpeg + Whisper.cpp local</span>
-        <span class="dl-tag">OneDrive</span>
-        <span class="dl-tag">Loop por clipe</span>
-        <span class="dl-tag hot">9:16 + Legendas opcionais</span>
-      </div>
-      <button class="btn btn-full" disabled style="opacity:0.4;cursor:not-allowed">🔒 Opção 2 bloqueada — use Opção 3</button>
-    </div>
   </div>
 
   <div class="json-preview">
     <div class="json-preview-header">
-      <span id="preview-label">📄 preview: workflow-shorts-semantic.json</span>
+      <span id="preview-label">📄 preview: workflow-shorts-blocos.json</span>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="renderPreview('semantic')">Semântico</button>
-        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="renderPreview('block')">Blocos</button>
-        <button class="btn btn-secondary" style="padding:6px 12px;font-size:12px" onclick="renderPreview('simple')">Simples</button>
+
       </div>
     </div>
     <pre id="json-preview-content">Carregando preview...</pre>
@@ -851,11 +449,11 @@ Leia TODA a transcrição antes de decidir.
 
 <script>
 const cfg = {
-  anthropicKey:'', openaiKey:'', geminiKey:'', onedriveFolder:'',
-  minClip:30, maxClip:70, minBlockScore:70, noiseDb:-30, minSilence:0.4,
+  anthropicKey:'', openaiKey:'', geminiKey:'', onedriveFolder:'', outputFolder:'',
+  minClip:30, maxClip:70, minBlockScore:40, noiseDb:-30, minSilence:0.4,
   margin:0.15, language:'pt', width:1080, height:1920,
-  fontSize:18, marginV:30, includeSubtitles:true, captionStyle:'word',
-  aiEngine:'none', ollamaUrl:'http://ollama:11434/api/generate', ollamaModel:'llama3.1:8b'
+  fontSize:18, marginV:30, includeSubtitles:false, captionStyle:'word',
+  aiEngine:'none'
 };
 
 function switchTab(id){
@@ -863,7 +461,7 @@ function switchTab(id){
   document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
   document.getElementById('content-'+id).classList.add('active');
-  if(id==='download') renderPreview('semantic');
+  if(id==='download') renderPreview('block');
 }
 
 function updateCfg(){
@@ -871,12 +469,13 @@ function updateCfg(){
   cfg.openaiKey    = document.getElementById('openai-key').value||'YOUR_OPENAI_KEY';
   cfg.geminiKey    = document.getElementById('gemini-key').value||'YOUR_GEMINI_KEY';
   cfg.onedriveFolder = document.getElementById('onedrive-folder').value||'Videos-Cortes';
+  cfg.outputFolder   = document.getElementById('output-folder').value||'Videos-Cortes/Cortes';
   cfg.minClip = parseInt(document.getElementById('min-clip').value)||30;
   cfg.maxClip = parseInt(document.getElementById('max-clip').value)||70;
-  cfg.minBlockScore = parseInt(document.getElementById('min-block-score').value)||70;
-  cfg.noiseDb = parseInt(document.getElementById('noise-db').value)||-30;
-  cfg.minSilence = parseFloat(document.getElementById('min-silence').value)||0.4;
-  cfg.margin = parseFloat(document.getElementById('margin').value)||0.15;
+  cfg.minBlockScore = parseInt(document.getElementById('min-block-score').value)||40;
+  cfg.noiseDb = -30;
+  cfg.minSilence = 0.4;
+  cfg.margin = 0.15;
   cfg.language = document.getElementById('language').value;
   cfg.width = parseInt(document.getElementById('width').value)||1080;
   cfg.height = parseInt(document.getElementById('height').value)||1920;
@@ -885,14 +484,10 @@ function updateCfg(){
   cfg.includeSubtitles = document.getElementById('include-subtitles').checked;
   cfg.captionStyle = document.getElementById('caption-style').value;
   cfg.aiEngine = document.getElementById('ai-engine').value;
-  cfg.ollamaUrl = document.getElementById('ollama-url').value||'http://ollama:11434/api/generate';
-  cfg.ollamaModel = document.getElementById('ollama-model').value||'llama3.1:8b';
 
   document.getElementById('gemini-key-field').style.display    = cfg.aiEngine==='gemini' ? '' : 'none';
   document.getElementById('anthropic-key-field').style.display = cfg.aiEngine==='claude' ? '' : 'none';
   document.getElementById('openai-key-field').style.display    = cfg.aiEngine==='openai' ? '' : 'none';
-  document.getElementById('ollama-url-field').style.display    = cfg.aiEngine==='ollama' ? '' : 'none';
-  document.getElementById('ollama-model-field').style.display  = cfg.aiEngine==='ollama' ? '' : 'none';
 }
 
 function updateRange(){
@@ -900,511 +495,6 @@ function updateRange(){
   const mx=parseInt(document.getElementById('max-clip').value)||150;
   const fmt=s=>Math.floor(s/60)+'m'+(s%60>0?(s%60)+'s':'');
   document.getElementById('range-display').textContent='🎯 Alvo: '+fmt(mn)+' → '+fmt(mx)+' (ideal 40–70s)';
-}
-
-function buildSimpleWorkflow(){
-  const MIN=cfg.minClip, MAX=cfg.maxClip, sub=cfg.includeSubtitles, mg=cfg.margin;
-  const wordFlags = cfg.captionStyle === 'word' ? ' --max-len 1 --split-on-word' : '';
-  const style = `FontName=Poppins,Bold=1,FontSize=${cfg.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=0,Outline=0,Shadow=1,Alignment=2,MarginV=${cfg.marginV}`;
-
-  const montarClipesCode = `const out = $json.stdout || '';
-const m   = out.match(/DURATION:([\\d.]+)/);
-const tot = m ? parseFloat(m[1]) : 600;
-const vp  = $('Paths: Vídeo').first().json.videoPath;
-const vn  = $('Paths: Vídeo').first().json.videoName;
-const MIN=${MIN}, MAX=${MAX}, mg=${mg};
-const ss = [...out.matchAll(/silence_start: ([\\d.]+)/g)].map(x=>+x[1]);
-const se = [...out.matchAll(/silence_end: ([\\d.]+)/g)].map(x=>+x[1]);
-// blocos de fala (bl) separados por pausas (gap = duracao do silencio seguinte)
-const bl=[]; let p=0;
-ss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s,gap:(se[i]||s+.5)-s}); p=se[i]||s+.5; });
-bl.push({s:p,e:tot,gap:0});
-const MAX_CLIPS=12;
-const cl=[]; let cs=bl[0]?.s||0, du=0, best=-1, bestGap=-1;
-for (let i=0; i<bl.length; i++) {
-  const b = bl[i];
-  du += b.e - b.s;
-  // dentro da janela [MIN,MAX]: guarda o melhor ponto de corte (maior pausa)
-  if (du >= MIN && du <= MAX && b.gap > bestGap) { bestGap = b.gap; best = i; }
-  const forceCut = du > MAX && best === -1;
-  if (forceCut) { bestGap = b.gap; best = i; }
-  if (best !== -1 && (du >= MAX || i === bl.length-1)) {
-    const cutBlock = bl[best];
-    const idx = String(cl.length+1).padStart(2,'0');
-    const outPath   = '/home/node/.n8n-files/short_'+idx+'.mp4';${sub ? `
-    const audioPath = '/home/node/.n8n-files/clip_'+idx+'.wav';
-    const srtBase   = '/home/node/.n8n-files/clip_'+idx;
-    const srtPath   = srtBase+'.srt';` : ''}
-    cl.push({
-      clipStart: Math.max(0, cs - mg),
-      clipEnd:   cutBlock.e + mg,
-      idx, videoPath: vp, videoName: vn, outPath${sub ? ', audioPath, srtBase, srtPath' : ''}
-    });
-    if (cl.length >= MAX_CLIPS) break;
-    cs = bl[best+1]?.s ?? cutBlock.e;
-    du = bl.slice(best+1, i+1).reduce((a,x)=>a+(x.e-x.s),0);
-    best = -1; bestGap = -1;
-  }
-}
-return cl;`;
-
-  const nodes = [
-    {id:"n1",name:"OneDrive Trigger",type:"n8n-nodes-base.microsoftOneDriveTrigger",typeVersion:1,position:[200,300],
-     parameters:{event:"fileCreated",watch:"oneSelectedFolder",folderId:cfg.onedriveFolder}},
-    {id:"nF",name:"É Vídeo?",type:"n8n-nodes-base.if",typeVersion:2,position:[360,300],
-     parameters:{conditions:{options:{caseSensitive:false},conditions:[{id:"v1",leftValue:"={{ $json.name }}",rightValue:"\\.(mp4|mkv|webm|mov|avi)$",operator:{type:"string",operation:"regex"}}],combinator:"and"},options:{}}},
-    {id:"n2",name:"Baixar Vídeo",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[540,300],
-     parameters:{resource:"file",operation:"download",fileId:"={{ $json.id }}"}},
-    {id:"n3",name:"Salvar na VPS",type:"n8n-nodes-base.writeBinaryFile",typeVersion:1,position:[720,300],
-     parameters:{fileName:"=/home/node/.n8n-files/{{ $('OneDrive Trigger').first().json.name }}",dataPropertyName:"data"}},
-    {id:"n4",name:"Paths: Vídeo",type:"n8n-nodes-base.code",typeVersion:2,position:[900,300],
-     parameters:{jsCode:"const t = $('OneDrive Trigger').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName: t.name,\n  videoPath: base + t.name\n}}];\n"}},
-    {id:"n5",name:"FFprobe + Silêncios",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[920,300],
-     parameters:{command:`=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{{ $json.videoPath }}") && echo "DURATION:$DUR" && ffmpeg -i "{{ $json.videoPath }}" -af 'silencedetect=noise=${cfg.noiseDb}dB:d=${cfg.minSilence}' -f null - 2>&1 | grep -E "silence_start|silence_end" || true`}},
-    {id:"n6",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1100,300],
-     parameters:{jsCode: montarClipesCode}},
-    {id:"n6a",name:"Loop Over Items",type:"n8n-nodes-base.splitInBatches",typeVersion:3,position:[1280,300],
-     parameters:{batchSize:1,options:{}}}
-  ];
-
-  if (sub) {
-    nodes.push(
-      {id:"n6b",name:"Extrair Áudio do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1500,440],
-       parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -i "{{ $json.videoPath }}" -t "{{ $json.clipEnd - $json.clipStart }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
-      {id:"n6c",name:"Preparar Whisper",type:"n8n-nodes-base.code",typeVersion:2,position:[1680,440],
-       parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
-      {id:"n6d",name:"Whisper.cpp Transcrever",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1860,440],
-       parameters:{command:`=whisper -m /models/ggml-small.bin -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np${wordFlags} && tr 'a-zàáâãéêíóôõúç' 'A-ZÀÁÂÃÉÊÍÓÔÕÚÇ' < "{{ $json.srtPath }}" > "{{ $json.srtPath }}.tmp" && mv "{{ $json.srtPath }}.tmp" "{{ $json.srtPath }}"`}},
-      {id:"n6e",name:"Preparar Corte Final",type:"n8n-nodes-base.code",typeVersion:2,position:[2040,440],
-       parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}}
-    );
-  }
-
-  const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
-  const vf_sub  = `${vf_base},setpts=PTS-STARTPTS,subtitles={{ $json.srtPath }}:force_style='${style}'`;
-  const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
-  const silencePrefix = `OEND={{ $json.clipEnd }} && MAXEND=$(awk -v s={{ $json.clipStart }} 'BEGIN{printf "%.3f", s+180}') && SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}') && SRAW=$(ffmpeg -y -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v e="$OEND" '{t=$NF+0; if(t>e){print t; exit}}') && AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" 'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; else if(e<=m) printf "%.3f",e; else printf "%.3f",m}') && `;
-  const ffBase = `-y -ss "{{ $json.clipStart }}" -to "$AEND" -i "{{ $json.videoPath }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
-  const cutCmd = sub
-    ? `=${silencePrefix}(test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}")`
-    : `=${silencePrefix}ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`;
-
-  nodes.push({id:"n7",name:cutNodeName,type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2220,440],
-    parameters:{command:cutCmd}});
-
-  nodes.push(
-    {id:"n7b",name:"Preparar Leitura",type:"n8n-nodes-base.code",typeVersion:2,position:[2400,440],
-     parameters:{jsCode:"const clip = $('Loop Over Items').item.json;\nreturn [{ json: {\n  outPath:   clip.outPath,\n  idx:       clip.idx,\n  videoName: clip.videoName\n}}];\n"}},
-    {id:"n8",name:"Ler Short do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[2580,440],
-     parameters:{filePath:"={{ $json.outPath }}",dataPropertyName:"data"}},
-    {id:"n9",name:"Upload → OneDrive",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[2760,440],
-     parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura').item.json.idx + '.mp4' }}",parentId:"={{ $('Resolver Pasta').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
-    {id:"n9b",name:"Limpar Arquivos do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2940,440],
-     parameters:{command:`=rm -f "{{ $('Loop Over Items').item.json.outPath }}"${sub ? ` "{{ $('Loop Over Items').item.json.audioPath }}" "{{ $('Loop Over Items').item.json.srtPath }}"` : ''}`}},
-    {id:"n18",name:"Limpar Vídeo Original",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1280,160],
-     parameters:{command:`=rm -f "{{ $('Paths: Vídeo').first().json.videoPath }}"`}}
-  );
-
-  const firstLoopNode = sub ? "Extrair Áudio do Clipe" : cutNodeName;
-  const connections = {
-    "OneDrive Trigger":{main:[[{node:"É Vídeo?",type:"main",index:0}]]},
-    "É Vídeo?":{main:[[{node:"Baixar Vídeo",type:"main",index:0}],[]]},
-    "Baixar Vídeo":{main:[[{node:"Salvar na VPS",type:"main",index:0}]]},
-    "Salvar na VPS":{main:[[{node:"Paths: Vídeo",type:"main",index:0}]]},
-    "Paths: Vídeo":{main:[[{node:"FFprobe + Silêncios",type:"main",index:0}]]},
-    "FFprobe + Silêncios":{main:[[{node:"Montar Clipes",type:"main",index:0}]]},
-    "Montar Clipes":{main:[[{node:"Loop Over Items",type:"main",index:0}]]},
-    "Loop Over Items":{main:[[{node:"Limpar Vídeo Original",type:"main",index:0}], [{node:firstLoopNode,type:"main",index:0}]]}
-  };
-  if (sub) {
-    connections["Extrair Áudio do Clipe"] = {main:[[{node:"Preparar Whisper",type:"main",index:0}]]};
-    connections["Preparar Whisper"] = {main:[[{node:"Whisper.cpp Transcrever",type:"main",index:0}]]};
-    connections["Whisper.cpp Transcrever"] = {main:[[{node:"Preparar Corte Final",type:"main",index:0}]]};
-    connections["Preparar Corte Final"] = {main:[[{node:cutNodeName,type:"main",index:0}]]};
-  }
-  connections[cutNodeName] = {main:[[{node:"Preparar Leitura",type:"main",index:0}]]};
-  connections["Preparar Leitura"] = {main:[[{node:"Ler Short do Disco",type:"main",index:0}]]};
-  connections["Ler Short do Disco"] = {main:[[{node:"Upload → OneDrive",type:"main",index:0}]]};
-  connections["Upload → OneDrive"] = {main:[[{node:"Limpar Arquivos do Clipe",type:"main",index:0}]]};
-  connections["Limpar Arquivos do Clipe"] = {main:[[{node:"Loop Over Items",type:"main",index:0}]]};
-
-  return {
-    name: sub
-      ? "YouTube Shorts Generator — Simples (FFmpeg + Whisper.cpp local, loop por clipe)"
-      : "YouTube Shorts Generator — Simples (FFmpeg only, loop por clipe)",
-    nodes, connections,
-    settings:{executionOrder:"v1"},
-    meta:{version:"v17-loop", onedriveFolder: cfg.onedriveFolder, includeSubtitles: sub, captionStyle: cfg.captionStyle}
-  };
-}
-
-function buildSemanticWorkflow(){
-  const MIN=cfg.minClip, MAX=cfg.maxClip, sub=cfg.includeSubtitles, engine=cfg.aiEngine, useAI=engine!=='none';
-  const wordFlags = cfg.captionStyle === 'word' ? ' --max-len 1 --split-on-word' : '';
-  const style = `FontName=Poppins,Bold=1,FontSize=${cfg.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H00000000,BorderStyle=0,Outline=0,Shadow=1,Alignment=2,MarginV=${cfg.marginV}`;
-
-  const nodes = [
-    {id:"n1",name:"OneDrive Trigger",type:"n8n-nodes-base.microsoftOneDriveTrigger",typeVersion:1,position:[160,300],
-     parameters:{event:"fileCreated",watch:"oneSelectedFolder",folderId:cfg.onedriveFolder}},
-    {id:"nF",name:"É Vídeo?",type:"n8n-nodes-base.if",typeVersion:2,position:[320,300],
-     parameters:{conditions:{options:{caseSensitive:false},conditions:[{id:"v1",leftValue:"={{ $json.name }}",rightValue:"\\.(mp4|mkv|webm|mov|avi)$",operator:{type:"string",operation:"regex"}}],combinator:"and"},options:{}}},
-    {id:"n2",name:"Baixar Vídeo",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[500,300],
-     parameters:{resource:"file",operation:"download",fileId:"={{ $json.id }}"}},
-    {id:"n3",name:"Salvar na VPS",type:"n8n-nodes-base.writeBinaryFile",typeVersion:1,position:[680,300],
-     parameters:{fileName:"=/home/node/.n8n-files/{{ $('OneDrive Trigger').first().json.name }}",dataPropertyName:"data"}},
-    {id:"n4",name:"Preparar Caminhos",type:"n8n-nodes-base.code",typeVersion:2,position:[860,300],
-     parameters:{jsCode:"const t = $('OneDrive Trigger').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: {\n  videoName: t.name,\n  videoPath: base + t.name,\n  audioPath: base + 'audio_full.wav'\n}}];\n"}}
-  ];
-
-  if (useAI) {
-    const prepNodeName = engine==='claude' ? "Preparar Claude" : "Preparar Ollama";
-    nodes.push(
-      {id:"n5",name:"FFprobe + Extrair Áudio",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[880,300],
-       parameters:{command:'=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{{ $json.videoPath }}") && echo "DURATION:$DUR" && ffmpeg -y -i "{{ $json.videoPath }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"'}},
-      {id:"n6",name:"Preparar Whisper Completo",type:"n8n-nodes-base.code",typeVersion:2,position:[1060,300],
-       parameters:{jsCode:"const c = $('Preparar Caminhos').first().json;\nconst out = $json.stdout || '';\nconst m = out.match(/DURATION:([\\d.]+)/);\nconst duration = m ? parseFloat(m[1]) : 0;\nconst srtBase = '/home/node/.n8n-files/transcript_full';\nreturn [{ json: { ...c, duration, srtBase, srtPath: srtBase + '.srt' } }];\n"}},
-      {id:"n7",name:"Whisper.cpp Transcrever Completo",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1240,300],
-       parameters:{command:`=whisper -m /models/ggml-small.bin -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"`}},
-      {id:"n8",name:prepNodeName,type:"n8n-nodes-base.code",typeVersion:2,position:[1420,300],
-       parameters:{jsCode:"const c = $('Preparar Whisper Completo').first().json;\nconst transcript = $json.stdout || '';\nreturn [{ json: { ...c, transcript } }];\n"}}
-    );
-
-    if (engine === 'claude') {
-      nodes.push(
-        {id:"n9",name:"Claude — Gerar Clipes",type:"n8n-nodes-base.httpRequest",typeVersion:4,position:[1600,300],
-         parameters:{method:"POST",url:"https://api.anthropic.com/v1/messages",
-           sendHeaders:true,
-           headerParameters:{parameters:[
-             {name:"x-api-key",value:cfg.anthropicKey},
-             {name:"anthropic-version",value:"2023-06-01"},
-             {name:"content-type",value:"application/json"}]},
-           sendBody:true,bodyContentType:"json",specifyBody:"json",
-           jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 8000, system: 'Você é um editor sênior de YouTube Shorts especialista em retenção de audiência em português. Analise a transcrição SRT completa e identifique de 5 a 8 clipes avaliando 7 critérios combinados. Use os timestamps SRT para calcular ritmo de fala (palavras ÷ segundos do trecho).\\n\\nCRITÉRIOS:\\n1. GANCHO INICIAL (mais importante): Trecho começa com frase que prende nos 3s? (pergunta direta, revelação, afirmação forte, estatística). Sem gancho = descartado.\\n2. EMOÇÃO NA FALA: Palavras de surpresa, indignação, entusiasmo, empatia, exclamações, urgência.\\n3. VELOCIDADE DA FALA: Ritmo ideal 2-3 palavras/segundo (calcule pelos timestamps SRT). Muito lento ou muito rápido reduz pontuação.\\n4. MUDANÇA DE TOM: Variação de energia no trecho (pergunta→resposta, problema→solução, exclamações, negações enfáticas).\\n5. PALAVRAS DE IMPACTO: segredo, erro, nunca, sempre, incrível, absurdo, revelação, cuidado, atenção, simples, rápido, impossível, mudou, descobri, funciona.\\n6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — sem limite rígido: capture o raciocínio completo. NUNCA trunque para caber no tempo.\\n7. RETENÇÃO ESTIMADA: O clipe cria tensão/curiosidade para ser assistido até o fim?\\n\\nPASSO 1 — PONTOS DE CONCLUSÃO: Leia TODA a transcrição e identifique 15–25 momentos onde o pregador conclui um pensamento completo (responde uma pergunta, fecha uma ilustração, resume um ponto, resolve um argumento). Liste cada um com o timestamp e um resumo de 5 palavras.\\nATENÇÃO: a transcrição NÃO tem pontuação (whisper.cpp). Use os GAPS nos timestamps SRT como sinal PRIMÁRIO de pausa natural: quando o início de um bloco SRT está ≥0.5s após o fim do bloco anterior, há pausa real no áudio — candidato natural para 'end'. Além disso, identifique conclusões por: palavras-sinal (\\"então\\", \\"portanto\\", \\"por isso\\", \\"fica aqui\\", \\"entende\\", \\"lembra disso\\"), mudança de assunto, ou afirmação definitiva que encerra o argumento. NÃO marque pausas no meio de enumerações.\\n\\nPASSO 2 — SELEÇÃO DE CLIPES (de 5 a 8, seja generoso): Para cada clipe: (a) escolha 'start' com gancho forte nos primeiros 3s; (b) o 'end' DEVE ser um dos pontos de conclusão do PASSO 1 que caia a partir de start+40s (sem teto fixo — capture o raciocínio completo) — preferencialmente o FIM de um bloco SRT com gap ≥0.5s para o próximo; (c) se nenhum ponto de conclusão estiver nessa janela, avance o 'start' ou escolha outro trecho; (d) o 'start' de cada clipe deve ser MAIOR que o 'end' do clipe anterior — sem sobreposição de tempo. Prefira retornar 8 clipes — seja generoso.\\n\\nREGRAS:\\n- 'end' obrigatoriamente em ponto de conclusão. NUNCA em enumeração, vírgula ou conjunção.\\n- Cortes em pausas de fala. Clipe autocontido.\\n- Clipes NÃO se sobrepõem: 'start' de cada clipe deve ser maior que o 'end' do anterior.\\n\\nRetorne APENAS JSON válido sem markdown:\\n{\\"conclusions\\":[{\\"t\\":68.9,\\"summary\\":\\"resumo\\"}],\\"clips\\":[{\\"start\\":12.4,\\"end\\":68.9,\\"title\\":\\"slug-curto\\",\\"hook\\":\\"Frase exata de abertura\\",\\"reason\\":\\"Por que funciona\\",\\"retention_score\\":87}]}', messages: [{ role: 'user', content: 'Duração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }) }}`}},
-        {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
-         parameters:{jsCode:`const text = (($json.content && $json.content[0] && $json.content[0].text) || '').trim();
-let parsed;
-try { parsed = JSON.parse(text); } catch(_) { const m = text.match(/\\{[\\s\\S]*\\}/) || text.match(/\\[[\\s\\S]*\\]/); if (!m) throw new Error('Claude nao retornou JSON. Resposta: ' + text.slice(0, 400)); try { parsed = JSON.parse(m[0]); } catch(e) { throw new Error('JSON invalido da Claude: ' + e.message); } }
-const clips = (() => { if (Array.isArray(parsed)) return parsed; const c = parsed.clips||parsed.clipes||parsed.cortes; if (c) return c; const a = Object.values(parsed).filter(v=>Array.isArray(v)&&v.length>0&&v[0]&&v[0].start!=null); return a[a.length-1]||[]; })().slice(0, 8);
-const c = $('${prepNodeName}').first().json;
-const vp = c.videoPath;
-const vn = c.videoName;
-const MIN_DUR = ${MIN}, MAX_DUR = ${MAX};
-const base = '/home/node/.n8n-files/';
-const results = [];
-for (let i = 0; i < clips.length; i++) {
-  const clip = clips[i];
-  const dur = clip.end - clip.start;
-  if (dur < MIN_DUR - 10 || dur > 180) continue;
-  if (results.length > 0 && clip.start < results[results.length-1].clipEnd - 5) continue;
-  const idx = String(results.length + 1).padStart(2, '0');
-  const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-  const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';
-  const audioPath = base + 'clip_' + idx + '.wav';
-  const srtBase   = base + 'clip_' + idx;
-  const srtPath   = srtBase + '.srt';
-  const metaPath  = base + 'clip_' + idx + '_meta.json';
-  const ds = Math.round(dur);
-  const metaContent = JSON.stringify({
-    index: results.length + 1,
-    title: clip.title,
-    slug,
-    hook: clip.hook || '',
-    reason: clip.reason || '',
-    retention_score: clip.retention_score || null,
-    criteria: clip.criteria || null,
-    start: clip.start,
-    end: clip.end,
-    duration: Math.floor(ds / 60) + 'm' + (ds % 60) + 's',
-    videoSource: vn
-  }, null, 2);
-  results.push({
-    clipStart: Math.max(0, clip.start),
-    clipEnd: clip.end,
-    idx, titleSlug: slug,
-    hook: clip.hook || '', reason: clip.reason || '',
-    videoPath: vp, videoName: vn,
-    outPath, audioPath${sub ? ', srtBase, srtPath' : ''},
-    metaPath, metaContent
-  });
-}
-return results;`}}
-      );
-    } else if (engine === 'gemini') {
-      nodes.push(
-        {id:"n9",name:"Gemini — Gerar Clipes",type:"n8n-nodes-base.httpRequest",typeVersion:4,position:[1600,300],
-         parameters:{method:"POST",url:`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${cfg.geminiKey}`,
-           sendHeaders:true,
-           headerParameters:{parameters:[{name:"content-type",value:"application/json"}]},
-           sendBody:true,bodyContentType:"json",specifyBody:"json",
-           jsonBody:`={{ JSON.stringify({ contents: [{ parts: [{ text: 'Você é um editor de YouTube Shorts especialista em conteúdo viral em português. Analise a transcrição SRT e identifique até 12 clipes avaliando 7 critérios. Use os timestamps SRT para calcular ritmo de fala (palavras ÷ segundos do trecho).\\n\\nCRITÉRIOS:\\n1. GANCHO INICIAL (mais importante): Começa com frase que para o scroll nos 3s? (revelação, pergunta, afirmação forte, estatística). Sem gancho = descartado.\\n2. EMOÇÃO NA FALA: Surpresa, indignação, entusiasmo, empatia, exclamações, urgência.\\n3. VELOCIDADE DA FALA: Ritmo ideal 2-3 palavras/segundo (timestamps SRT). Monotonia ou atropelamento reduz pontuação.\\n4. MUDANÇA DE TOM: Variação de energia (pergunta→resposta, problema→solução, exclamações, negações enfáticas).\\n5. PALAVRAS DE IMPACTO: segredo, erro, nunca, sempre, incrível, absurdo, revelação, cuidado, atenção, simples, rápido, impossível, mudou, descobri, funciona.\\n6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — sem limite rígido: capture o raciocínio completo. NUNCA trunque para caber no tempo.\\n7. RETENÇÃO ESTIMADA: Cria tensão/curiosidade para assistir até o fim?\\n\\nPASSO 1 — PONTOS DE CONCLUSÃO: Leia TODA a transcrição e identifique 15–25 momentos onde o pregador conclui um pensamento completo (responde pergunta, fecha ilustração, resume ponto). Liste timestamp e resumo de 5 palavras.\\nATENÇÃO: a transcrição NÃO tem pontuação (whisper.cpp). Use os GAPS nos timestamps SRT como sinal PRIMÁRIO de pausa natural: quando o início de um bloco SRT está ≥0.5s após o fim do bloco anterior, há pausa real no áudio — candidato natural para 'end'. Além disso, identifique conclusões por: palavras-sinal (\\"então\\", \\"portanto\\", \\"por isso\\", \\"fica aqui\\", \\"entende\\"), mudança de assunto, ou afirmação definitiva que encerra o argumento. NÃO marque pausas no meio de enumerações.\\n\\nPASSO 2 — SELEÇÃO (de 5 a 8, do mais viral ao menos, seja generoso): Para cada clipe: (a) 'start' com gancho forte; (b) 'end' em um dos pontos de conclusão do PASSO 1 a partir de start+40s (sem teto fixo — capture o raciocínio completo) — preferencialmente o FIM de um bloco SRT com gap ≥0.5s para o próximo; (c) se nenhum ponto cair nessa janela, avance o 'start'; (d) o 'start' de cada clipe deve ser MAIOR que o 'end' do clipe anterior — sem sobreposição. Prefira retornar 8 clipes.\\n\\nREGRAS: 'end' obrigatoriamente em ponto de conclusão. NUNCA enumeração ou frase em aberto. Cortes em pausas de fala. Clipe autocontido.\\n- Clipes NÃO se sobrepõem: 'start' de cada clipe deve ser maior que o 'end' do anterior.\\nRetorne APENAS JSON sem markdown:{\\"conclusions\\":[{\\"t\\":68.9,\\"summary\\":\\"resumo\\"}],\\"clips\\":[{\\"start\\":0,\\"end\\":65,\\"title\\":\\"slug\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Por que é viral\\",\\"retention_score\\":87}]}\\n\\nDuração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }] }, generationConfig: { responseMimeType: 'application/json' } }) }}`}},
-        {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
-         parameters:{jsCode:`const text = (($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] && $json.candidates[0].content.parts[0].text) || '').trim();
-let parsed;
-try { parsed = JSON.parse(text); } catch(_) { const m = text.match(/\\{[\\s\\S]*\\}/) || text.match(/\\[[\\s\\S]*\\]/); if (!m) throw new Error('Gemini nao retornou JSON. Resposta: ' + text.slice(0, 400)); try { parsed = JSON.parse(m[0]); } catch(e) { throw new Error('JSON invalido do Gemini: ' + e.message); } }
-const clips = (() => { if (Array.isArray(parsed)) return parsed; const c = parsed.clips||parsed.clipes||parsed.cortes; if (c) return c; const a = Object.values(parsed).filter(v=>Array.isArray(v)&&v.length>0&&v[0]&&v[0].start!=null); return a[a.length-1]||[]; })().slice(0, 8);
-const c = $('${prepNodeName}').first().json;
-const vp = c.videoPath;
-const vn = c.videoName;
-const MIN_DUR = ${MIN}, MAX_DUR = ${MAX};
-const base = '/home/node/.n8n-files/';
-const results = [];
-for (let i = 0; i < clips.length; i++) {
-  const clip = clips[i];
-  const dur = clip.end - clip.start;
-  if (dur < MIN_DUR - 10 || dur > 180) continue;
-  if (results.length > 0 && clip.start < results[results.length-1].clipEnd - 5) continue;
-  const idx = String(results.length + 1).padStart(2, '0');
-  const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-  const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';
-  const audioPath = base + 'clip_' + idx + '.wav';
-  const srtBase   = base + 'clip_' + idx;
-  const srtPath   = srtBase + '.srt';
-  const metaPath  = base + 'clip_' + idx + '_meta.json';
-  const ds = Math.round(dur);
-  const metaContent = JSON.stringify({
-    index: results.length + 1,
-    title: clip.title,
-    slug,
-    hook: clip.hook || '',
-    reason: clip.reason || '',
-    retention_score: clip.retention_score || null,
-    criteria: clip.criteria || null,
-    start: clip.start,
-    end: clip.end,
-    duration: Math.floor(ds / 60) + 'm' + (ds % 60) + 's',
-    videoSource: vn
-  }, null, 2);
-  results.push({
-    clipStart: Math.max(0, clip.start),
-    clipEnd: clip.end,
-    idx, titleSlug: slug,
-    hook: clip.hook || '', reason: clip.reason || '',
-    videoPath: vp, videoName: vn,
-    outPath, audioPath${sub ? ', srtBase, srtPath' : ''},
-    metaPath, metaContent
-  });
-}
-return results;`}}
-      );
-    } else {
-      nodes.push(
-        {id:"n9",name:"Ollama — Gerar Clipes",type:"n8n-nodes-base.httpRequest",typeVersion:4,position:[1600,300],
-         parameters:{method:"POST",url:cfg.ollamaUrl,
-           sendBody:true,bodyContentType:"json",specifyBody:"json",
-           jsonBody:`={{ JSON.stringify({ model: '${cfg.ollamaModel}', stream: false, format: 'json', prompt: 'Editor de YouTube Shorts em português. Avalie 7 critérios para identificar até 5 clipes: 1) GANCHO nos 3s iniciais — obrigatório, sem hook descarta; 2) EMOÇÃO NA FALA — surpresa, entusiasmo, urgência; 3) VELOCIDADE DA FALA — ideal 2-3 palavras/segundo pelos timestamps SRT; 4) MUDANÇA DE TOM — pergunta→resposta, problema→solução, exclamações; 5) PALAVRAS DE IMPACTO — segredo, erro, nunca, sempre, incrível, revelação, cuidado; 6) DURAÇÃO IDEAL — 40-70s preferencial, mín ${MIN}s, sem teto fixo; 7) RETENÇÃO ESTIMADA — cria curiosidade para assistir até o fim. PASSO 1 — PONTOS DE CONCLUSÃO: identifique 15–25 momentos onde o pregador conclui um pensamento (timestamp + resumo 5 palavras). Transcrição SEM pontuação (whisper.cpp): use GAPS nos timestamps SRT como sinal PRIMÁRIO — quando início de bloco SRT está ≥0.5s após fim do bloco anterior, há pausa real (candidato para 'end'). Use também palavras-sinal ("então", "portanto", "por isso", "fica aqui", "entende") e mudanças de assunto para detectar conclusões reais. PASSO 2 — CLIPES (de 5 a 8, seja generoso): 'start' com gancho forte, 'end' em ponto de conclusão a partir de start+40s (sem teto fixo — capture o raciocínio completo), preferencialmente FIM de bloco SRT com gap ≥0.5s. Prefira 8 clipes; 'start' de cada clipe deve ser MAIOR que o 'end' do anterior. REGRAS: 'end' em conclusão real, nunca enumeração, cortes em pausas. Clipes NÃO se sobrepõem. Responda APENAS com JSON sem markdown: {\\"conclusions\\":[{\\"t\\":68.9,\\"summary\\":\\"resumo\\"}],\\"clips\\":[{\\"start\\":0,\\"end\\":65,\\"title\\":\\"slug\\",\\"hook\\":\\"Frase de abertura\\",\\"reason\\":\\"Motivo\\",\\"retention_score\\":87}]}.\\n\\nDuração total: ' + $json.duration + 's\\n\\nTranscrição (SRT):\\n' + $json.transcript }) }}`}},
-        {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
-         parameters:{jsCode:`const text = ($json.response || '').trim();
-let parsed;
-try { parsed = JSON.parse(text); } catch(_) { const m = text.match(/\\{[\\s\\S]*\\}/) || text.match(/\\[[\\s\\S]*\\]/); if (!m) throw new Error('Ollama nao retornou JSON. Resposta: ' + text.slice(0, 400)); try { parsed = JSON.parse(m[0]); } catch(e) { throw new Error('JSON invalido do Ollama: ' + e.message); } }
-const clips = (() => { if (Array.isArray(parsed)) return parsed; const c = parsed.clips||parsed.clipes||parsed.cortes; if (c) return c; const a = Object.values(parsed).filter(v=>Array.isArray(v)&&v.length>0&&v[0]&&v[0].start!=null); return a[a.length-1]||[]; })().slice(0, 8);
-const c = $('${prepNodeName}').first().json;
-const vp = c.videoPath;
-const vn = c.videoName;
-const MIN_DUR = ${MIN}, MAX_DUR = ${MAX};
-const base = '/home/node/.n8n-files/';
-const results = [];
-for (let i = 0; i < clips.length; i++) {
-  const clip = clips[i];
-  const dur = clip.end - clip.start;
-  if (dur < MIN_DUR - 10 || dur > 180) continue;
-  if (results.length > 0 && clip.start < results[results.length-1].clipEnd - 5) continue;
-  const idx = String(results.length + 1).padStart(2, '0');
-  const slug = (clip.title || 'clip').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-  const outPath   = base + 'short_' + idx + '_' + slug + '.mp4';
-  const audioPath = base + 'clip_' + idx + '.wav';
-  const srtBase   = base + 'clip_' + idx;
-  const srtPath   = srtBase + '.srt';
-  const metaPath  = base + 'clip_' + idx + '_meta.json';
-  const ds = Math.round(dur);
-  const metaContent = JSON.stringify({
-    index: results.length + 1,
-    title: clip.title,
-    slug,
-    hook: clip.hook || '',
-    reason: clip.reason || '',
-    retention_score: clip.retention_score || null,
-    criteria: clip.criteria || null,
-    start: clip.start,
-    end: clip.end,
-    duration: Math.floor(ds / 60) + 'm' + (ds % 60) + 's',
-    videoSource: vn
-  }, null, 2);
-  results.push({
-    clipStart: Math.max(0, clip.start),
-    clipEnd: clip.end,
-    idx, titleSlug: slug,
-    hook: clip.hook || '', reason: clip.reason || '',
-    videoPath: vp, videoName: vn,
-    outPath, audioPath${sub ? ', srtBase, srtPath' : ''},
-    metaPath, metaContent
-  });
-}
-return results;`}}
-      );
-    }
-  } else {
-    nodes.push(
-      {id:"n5",name:"FFprobe + Silêncios",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[880,300],
-       parameters:{command:`=DUR=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{{ $json.videoPath }}") && echo "DURATION:$DUR" && ffmpeg -i "{{ $json.videoPath }}" -af 'silencedetect=noise=${cfg.noiseDb}dB:d=${cfg.minSilence}' -f null - 2>&1 | grep -E "silence_start|silence_end" || true`}},
-      {id:"n10",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
-       parameters:{jsCode:`const out = $json.stdout || '';
-const m   = out.match(/DURATION:([\\d.]+)/);
-const tot = m ? parseFloat(m[1]) : 600;
-const c   = $('Preparar Caminhos').first().json;
-const vp  = c.videoPath;
-const vn  = c.videoName;
-const MIN=${MIN}, MAX=${MAX}, mg=${cfg.margin};
-const base = '/home/node/.n8n-files/';
-const ss = [...out.matchAll(/silence_start: ([\\d.]+)/g)].map(x=>+x[1]);
-const se = [...out.matchAll(/silence_end: ([\\d.]+)/g)].map(x=>+x[1]);
-// blocos de fala (bl) separados por pausas (gap = duracao do silencio seguinte)
-const bl=[]; let p=0;
-ss.forEach((s,i)=>{ if(s-p>0.2) bl.push({s:p,e:s,gap:(se[i]||s+.5)-s}); p=se[i]||s+.5; });
-bl.push({s:p,e:tot,gap:0});
-const MAX_CLIPS=12;
-const cl=[]; let cs=bl[0]?.s||0, du=0, best=-1, bestGap=-1;
-for (let i=0; i<bl.length; i++) {
-  const b = bl[i];
-  du += b.e - b.s;
-  // dentro da janela [MIN,MAX]: guarda o melhor ponto de corte (maior pausa)
-  if (du >= MIN && du <= MAX && b.gap > bestGap) { bestGap = b.gap; best = i; }
-  const forceCut = du > MAX && best === -1;
-  if (forceCut) { bestGap = b.gap; best = i; }
-  if (best !== -1 && (du >= MAX || i === bl.length-1)) {
-    const cutBlock = bl[best];
-    const idx = String(cl.length+1).padStart(2,'0');
-    const clipStart = Math.max(0, cs - mg);
-    const clipEnd   = cutBlock.e + mg;
-    const slug = 'clip-'+idx;
-    const outPath   = base+'short_'+idx+'.mp4';
-    const audioPath = base+'clip_'+idx+'.wav';
-    const srtBase   = base+'clip_'+idx;
-    const srtPath   = srtBase+'.srt';
-    const metaPath  = base+'clip_'+idx+'_meta.json';
-    const ds = Math.round(clipEnd - clipStart);
-    const metaContent = JSON.stringify({
-      index: cl.length+1, title: 'clip_'+idx, slug,
-      hook: '', reason: '',
-      start: clipStart, end: clipEnd,
-      duration: Math.floor(ds/60)+'m'+(ds%60)+'s',
-      videoSource: vn
-    }, null, 2);
-    cl.push({
-      clipStart, clipEnd, idx, titleSlug: slug,
-      hook: '', reason: '',
-      videoPath: vp, videoName: vn,
-      outPath, audioPath${sub ? ', srtBase, srtPath' : ''},
-      metaPath, metaContent
-    });
-    if (cl.length >= MAX_CLIPS) break;
-    cs = bl[best+1]?.s ?? cutBlock.e;
-    du = bl.slice(best+1, i+1).reduce((a,x)=>a+(x.e-x.s),0);
-    best = -1; bestGap = -1;
-  }
-}
-return cl;`}}
-    );
-  }
-
-  nodes.push(
-    {id:"n10a",name:"Loop Over Items",type:"n8n-nodes-base.splitInBatches",typeVersion:3,position:[1960,300],
-     parameters:{batchSize:1,options:{}}}
-  );
-
-  if (sub) {
-    nodes.push(
-      {id:"n10b",name:"Extrair Áudio do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2180,440],
-       parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -i "{{ $json.videoPath }}" -t "{{ $json.clipEnd - $json.clipStart }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
-      {id:"n10c",name:"Preparar Whisper",type:"n8n-nodes-base.code",typeVersion:2,position:[2360,440],
-       parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
-      {id:"n10d",name:"Whisper.cpp Transcrever",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2540,440],
-       parameters:{command:`=whisper -m /models/ggml-small.bin -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np${wordFlags} && tr 'a-zàáâãéêíóôõúç' 'A-ZÀÁÂÃÉÊÍÓÔÕÚÇ' < "{{ $json.srtPath }}" > "{{ $json.srtPath }}.tmp" && mv "{{ $json.srtPath }}.tmp" "{{ $json.srtPath }}"`}},
-      {id:"n10e",name:"Preparar Corte Final",type:"n8n-nodes-base.code",typeVersion:2,position:[2720,440],
-       parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}}
-    );
-  }
-
-  const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
-  const vf_sub  = `${vf_base},setpts=PTS-STARTPTS,subtitles={{ $json.srtPath }}:force_style='${style}'`;
-  const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
-  const silencePrefix = `OEND={{ $json.clipEnd }} && MAXEND=$(awk -v s={{ $json.clipStart }} 'BEGIN{printf "%.3f", s+180}') && SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}') && SRAW=$(ffmpeg -y -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" -af "silencedetect=noise=-30dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v e="$OEND" '{t=$NF+0; if(t>e){print t; exit}}') && AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" 'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; else if(e<=m) printf "%.3f",e; else printf "%.3f",m}') && `;
-  const ffBase = `-y -ss "{{ $json.clipStart }}" -to "$AEND" -i "{{ $json.videoPath }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
-  const cutCmd = sub
-    ? `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && (test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}")`
-    : `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`;
-
-  nodes.push({id:"n11",name:cutNodeName,type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2900,440],
-    parameters:{command:cutCmd}});
-
-  nodes.push(
-    {id:"n12",name:"Preparar Leitura",type:"n8n-nodes-base.code",typeVersion:2,position:[3080,440],
-     parameters:{jsCode:"const clip = $('Loop Over Items').item.json;\nreturn [{ json: {\n  outPath:   clip.outPath,\n  metaPath:  clip.metaPath,\n  idx:       clip.idx,\n  titleSlug: clip.titleSlug,\n  videoName: clip.videoName\n}}];\n"}},
-    {id:"n13",name:"Ler Short do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[3260,440],
-     parameters:{filePath:"={{ $json.outPath }}",dataPropertyName:"data"}},
-    {id:"n14",name:"Upload Short → OneDrive",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[3440,440],
-     parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura').item.json.idx + '_' + $('Preparar Leitura').item.json.titleSlug + '.mp4' }}",parentId:"={{ $('Resolver Pasta').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
-    {id:"n15",name:"Preparar Leitura Meta",type:"n8n-nodes-base.code",typeVersion:2,position:[3620,440],
-     parameters:{jsCode:"const clip = $('Loop Over Items').item.json;\nreturn [{ json: {\n  metaPath:  clip.metaPath,\n  idx:       clip.idx,\n  titleSlug: clip.titleSlug,\n  videoName: clip.videoName\n}}];\n"}},
-    {id:"n16",name:"Ler Metadados do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[3800,440],
-     parameters:{filePath:"={{ $json.metaPath }}",dataPropertyName:"data"}},
-    {id:"n17",name:"Upload Metadados → OneDrive",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[3980,440],
-     parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura Meta').item.json.idx + '_' + $('Preparar Leitura Meta').item.json.titleSlug + '_meta.json' }}",parentId:"={{ $('Resolver Pasta').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
-    {id:"n17b",name:"Limpar Arquivos do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[4160,440],
-     parameters:{command:`=rm -f "{{ $('Loop Over Items').item.json.outPath }}" "{{ $('Loop Over Items').item.json.metaPath }}"${sub ? ` "{{ $('Loop Over Items').item.json.audioPath }}" "{{ $('Loop Over Items').item.json.srtPath }}"` : ''}`}},
-    {id:"n18",name:"Limpar Vídeo Original",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[700,160],
-     parameters:{command:`=rm -f "{{ $('Preparar Caminhos').first().json.videoPath }}"${useAI ? ` "{{ $('Preparar Caminhos').first().json.audioPath }}" "{{ $('Preparar Whisper Completo').first().json.srtPath }}"` : ''}`}}
-  );
-
-  const firstLoopNode = sub ? "Extrair Áudio do Clipe" : cutNodeName;
-  const connections = {
-    "OneDrive Trigger":{main:[[{node:"É Vídeo?",type:"main",index:0}]]},
-    "É Vídeo?":{main:[[{node:"Baixar Vídeo",type:"main",index:0}],[]]},
-    "Baixar Vídeo":{main:[[{node:"Salvar na VPS",type:"main",index:0}]]},
-    "Salvar na VPS":{main:[[{node:"Preparar Caminhos",type:"main",index:0}]]},
-    "Montar Clipes":{main:[[{node:"Loop Over Items",type:"main",index:0}]]},
-    "Loop Over Items":{main:[[{node:"Limpar Vídeo Original",type:"main",index:0}], [{node:firstLoopNode,type:"main",index:0}]]}
-  };
-  if (useAI) {
-    const prepNodeName = engine==='claude' ? "Preparar Claude" : "Preparar Ollama";
-    const aiNodeName = engine==='claude' ? "Claude — Gerar Clipes" : engine==='gemini' ? "Gemini — Gerar Clipes" : "Ollama — Gerar Clipes";
-    connections["Preparar Caminhos"] = {main:[[{node:"FFprobe + Extrair Áudio",type:"main",index:0}]]};
-    connections["FFprobe + Extrair Áudio"] = {main:[[{node:"Preparar Whisper Completo",type:"main",index:0}]]};
-    connections["Preparar Whisper Completo"] = {main:[[{node:"Whisper.cpp Transcrever Completo",type:"main",index:0}]]};
-    connections["Whisper.cpp Transcrever Completo"] = {main:[[{node:prepNodeName,type:"main",index:0}]]};
-    connections[prepNodeName] = {main:[[{node:aiNodeName,type:"main",index:0}]]};
-    connections[aiNodeName] = {main:[[{node:"Montar Clipes",type:"main",index:0}]]};
-  } else {
-    connections["Preparar Caminhos"] = {main:[[{node:"FFprobe + Silêncios",type:"main",index:0}]]};
-    connections["FFprobe + Silêncios"] = {main:[[{node:"Montar Clipes",type:"main",index:0}]]};
-  }
-  if (sub) {
-    connections["Extrair Áudio do Clipe"] = {main:[[{node:"Preparar Whisper",type:"main",index:0}]]};
-    connections["Preparar Whisper"] = {main:[[{node:"Whisper.cpp Transcrever",type:"main",index:0}]]};
-    connections["Whisper.cpp Transcrever"] = {main:[[{node:"Preparar Corte Final",type:"main",index:0}]]};
-    connections["Preparar Corte Final"] = {main:[[{node:cutNodeName,type:"main",index:0}]]};
-  }
-  connections[cutNodeName] = {main:[[{node:"Preparar Leitura",type:"main",index:0}]]};
-  connections["Preparar Leitura"] = {main:[[{node:"Ler Short do Disco",type:"main",index:0}]]};
-  connections["Ler Short do Disco"] = {main:[[{node:"Upload Short → OneDrive",type:"main",index:0}]]};
-  connections["Upload Short → OneDrive"] = {main:[[{node:"Preparar Leitura Meta",type:"main",index:0}]]};
-  connections["Preparar Leitura Meta"] = {main:[[{node:"Ler Metadados do Disco",type:"main",index:0}]]};
-  connections["Ler Metadados do Disco"] = {main:[[{node:"Upload Metadados → OneDrive",type:"main",index:0}]]};
-  connections["Upload Metadados → OneDrive"] = {main:[[{node:"Limpar Arquivos do Clipe",type:"main",index:0}]]};
-  connections["Limpar Arquivos do Clipe"] = {main:[[{node:"Loop Over Items",type:"main",index:0}]]};
-
-  const names = {
-    gemini: "YouTube Shorts Generator — Viral (Gemini + Whisper.cpp local, foco em cenas de impacto)",
-    claude: "YouTube Shorts Generator — Semântico (Claude + Whisper.cpp local, zero API de transcrição)",
-    ollama: "YouTube Shorts Generator — Semântico (Ollama local + Whisper.cpp local, zero custo de API)",
-    none: "YouTube Shorts Generator — Semântico (sem IA, detecção de silêncio + Whisper.cpp local)"
-  };
-
-  return {
-    name: names[engine],
-    nodes, connections,
-    settings:{executionOrder:"v1"},
-    meta:{version:"v18-semantic-local", onedriveFolder: cfg.onedriveFolder, includeSubtitles: sub, aiEngine: engine, captionStyle: cfg.captionStyle}
-  };
 }
 
 function buildBlockWorkflow(){
@@ -1416,36 +506,54 @@ function buildBlockWorkflow(){
   const finalNodeName   = engine==='claude' ? "Claude — Seleção Final"  : engine==='openai' ? "GPT — Seleção Final"  : "Gemini — Seleção Final";
   const sysAnalise = `Você é um editor de YouTube Shorts especialista em retenção de audiência. Avalie cada bloco de transcrição com nota 0-100 usando 7 critérios combinados. Use os timestamps do SRT para calcular ritmo de fala (palavras ÷ segundos do bloco).
 
-CRITÉRIOS E PESOS:
-1. Gancho inicial (25pts): Primeiros segundos têm frase que prende? (pergunta direta, revelação, afirmação forte, estatística, "você sabia que..."). Sem gancho claro = máximo 40pts no total.
-2. Emoção na fala (20pts): Palavras de surpresa, indignação, entusiasmo, empatia, exclamações, urgência.
-3. Velocidade da fala (10pts): Calcule palavras ÷ segundos do bloco. Faixa ótima 1.5-3.5 p/s = 10pts. Fala lenta intencional (1.0-1.5 p/s, comum em pregações, narração, palestras) = 7pts. Extremamente lento (<1.0) ou muito rápido (>4.5) = 3pts. NÃO penalize ritmo pausado se o conteúdo for reflexivo/emocional — avalie o adequação ao estilo, não velocidade absoluta.
-4. Mudança de tom (10pts): Variação de energia: pergunta→resposta, problema→solução, exclamações, negações enfáticas, mudança de contexto.
-5. Palavras de impacto (20pts): segredo, erro, nunca, sempre, verdade, incrível, absurdo, simples, rápido, impossível, revelação, cuidado, atenção, mudou, descobri, funciona.
-6. Densidade de clipes (10pts): O bloco tem trechos autocontidos de 40-70s? Blocos com múltiplos momentos fortes = 10pts; apenas 1 momento = 6pts; nenhum trecho isolável = 2pts. IMPORTANTE: os blocos têm ~3 minutos por design — não penalize pela duração total do bloco.
-7. Retenção estimada (5pts): Início claro + desenvolvimento + conclusão ou cliffhanger. Potencial de ser assistido até o fim.
+REGRA DE EXCLUSÃO OBRIGATÓRIA (aplicar ANTES de qualquer nota pelos 7 critérios abaixo): cultos evangélicos têm fases estruturais distintas — abertura/boas-vindas, louvor/adoração, avisos e recados da igreja, apelo de dízimos e ofertas, e só depois a pregação/mensagem em si ("a palavra"). Se o conteúdo do bloco pertencer a QUALQUER uma das fases abaixo, atribua nota MÁXIMA de 5, independentemente de quão emocionante, rápido ou impactante o texto pareça — esses trechos NUNCA devem virar Shorts:
+- Abertura do culto, boas-vindas, oração inicial ("bom dia, igreja", "sejam bem-vindos", orações de abertura)
+- Avisos e recados: eventos da igreja, datas, convites, agenda semanal, informes administrativos
+- Apelo de dízimos e ofertas: qualquer trecho pedindo, explicando ou incentivando contribuição financeira ("separe seu dízimo", "traga sua oferta", versículos usados nesse contexto)
+- Louvor/momento de música, cânticos, repetição de refrão
+Aplique os 7 critérios abaixo NORMALMENTE apenas se o bloco for parte da pregação/ensino do pregador (desenvolvimento de um argumento bíblico, ensino, aplicação prática, testemunho dentro da mensagem principal, INCLUINDO leitura bíblica de abertura da mensagem e contextualização inicial do tema — isso ainda é pregação, não é abertura do culto). Na dúvida entre pregação e uma das fases acima, prefira a nota baixa — é melhor descartar um bloco de pregação ambíguo do que deixar passar abertura/dízimo/avisos/louvor. Um culto normalmente tem só UM bloco de transição (o momento em que a abertura/avisos/louvor termina e a pregação começa) — blocos antes dessa transição quase sempre pertencem às fases excluídas.
 
-Retorne APENAS JSON sem markdown: [{"blockIndex":1,"score":85,"criteria":{"gancho":22,"emocao":17,"velocidade":8,"tom":8,"impacto":18,"duracao":8,"retencao":4},"reason":"motivo conciso"}]`;
-  const sysFinal   = `Você é um editor sênior de YouTube Shorts especialista em retenção de audiência em português. Com base nos melhores blocos e a transcrição SRT completa, selecione de 5 a 8 clipes finais avaliando 7 critérios:
+IMPORTANTE SOBRE O PROPÓSITO DESTA ETAPA: você está fazendo um FILTRO GROSSEIRO de relevância sobre blocos de ~3 minutos, NÃO escolhendo o clipe final. A seleção fina e precisa dos melhores 40-70s dentro do bloco acontece em uma ETAPA POSTERIOR, que lê a transcrição completa com contexto total e escolhe o início/fim exatos. Aqui você só precisa identificar quais blocos de PREGAÇÃO real têm QUALQUER potencial de conter um bom recorte — NÃO é necessário que o bloco inteiro de 3min já seja, sozinho, um Short perfeito e autocontido. Por isso, um bloco de pregação comum (sem nada excepcional, mas também sem nada horrível) deve receber uma nota MÉDIA (faixa 40-55), não uma nota baixa perto de zero.
+
+REGRA DE CONSISTÊNCIA NUMÉRICA (obrigatória): o campo "score" DEVE ser exatamente a soma dos 7 valores em "criteria" — nunca escreva um score que não bata com essa soma. A nota MÁXIMA de 5 com todos os critérios zerados é reservada EXCLUSIVAMENTE para blocos cuja "fase" seja diferente de "pregacao" (abertura, avisos, dizimo_oferta, louvor). Para QUALQUER bloco com fase="pregacao", você é OBRIGADO a calcular os 7 critérios individualmente a partir do conteúdo real daquele bloco, partindo do valor BASE de cada critério (ver lista abaixo) e ajustando para cima ou para baixo — NUNCA copie o mesmo score, os mesmos criteria ou o mesmo texto de reason de um bloco anterior. Um bloco de pregação só deve somar MENOS de 20 pontos totais se for GENUINAMENTE inutilizável (ex: apenas leitura de versículo sem nenhuma aplicação, ruído técnico, ou repetição EXTREMA e LITERAL da mesma frase por mais de 80% do bloco). Repetição moderada, tom pausado, falta de gancho editorial pronto, ou "ainda não chegou ao ponto alto do sermão" NÃO justificam nota abaixo de 30 — normalmente indicam algo entre 30 e 55. Se você perceber que está prestes a atribuir a mesma nota a vários blocos consecutivos de fase="pregacao", pare e releia o conteúdo específico de cada um antes de responder.
+
+CRITÉRIOS E PESOS (aplicáveis somente a blocos de pregação, conforme a regra de exclusão acima) — cada critério tem um valor BASE esperado para um bloco de pregação comum/mediano; ajuste para cima ou para baixo a partir desse valor base, e só use valores próximos de 0 em casos claramente ruins, não apenas "sem brilho":
+1. Gancho inicial (25pts, BASE 10pts): Primeiros segundos têm frase que prende? (pergunta direta, revelação, afirmação forte, estatística, "você sabia que..."). Sem gancho editorial pronto = mantenha ao menos 5-8pts (blocos de pregação contínua raramente abrem com um gancho já editado — isso é normal, não indica bloco ruim); gancho forte = até 25pts.
+2. Emoção na fala (20pts, BASE 10pts): Palavras de surpresa, indignação, entusiasmo, empatia, exclamações, urgência. Fala mais neutra/explicativa sem pico emocional claro = 6-9pts (não 0); emoção forte e consistente = até 20pts.
+3. Velocidade da fala (10pts, BASE 7pts): Calcule palavras ÷ segundos do bloco. Faixa ótima 1.5-3.5 p/s = 10pts. Fala lenta intencional (1.0-1.5 p/s, comum em pregações, narração, palestras) = 7pts. Extremamente lento (<1.0) ou muito rápido (>4.5) = 3pts. NÃO penalize ritmo pausado se o conteúdo for reflexivo/emocional — avalie a adequação ao estilo, não velocidade absoluta.
+4. Mudança de tom (10pts, BASE 5pts): Variação de energia: pergunta→resposta, problema→solução, exclamações, negações enfáticas, mudança de contexto. Sem variação perceptível = 3-4pts (não 0); variação clara = até 10pts.
+5. Palavras de impacto (20pts, BASE 8pts): segredo, erro, nunca, sempre, verdade, incrível, absurdo, simples, rápido, impossível, revelação, cuidado, atenção, mudou, descobri, funciona. Nenhuma palavra de impacto óbvia no bloco = 3-5pts (não 0, quase todo trecho de pregação tem alguma linguagem de aplicação ou exortação); várias palavras de impacto = até 20pts.
+6. Densidade de clipes (10pts, BASE 5pts): O bloco tem trechos autocontidos de 40-70s? Blocos com múltiplos momentos fortes = 10pts; apenas 1 momento = 6pts; nenhum trecho claramente isolável = 3-4pts (não 0, a etapa posterior ainda pode extrair um recorte útil do bloco). IMPORTANTE: os blocos têm ~3 minutos por design — não penalize pela duração total do bloco.
+7. Retenção estimada (5pts, BASE 3pts): Início claro + desenvolvimento + conclusão ou cliffhanger. Sem estrutura clara ainda = 1-2pts (não 0); estrutura completa = 5pts.
+
+Retorne APENAS JSON sem markdown: [{"blockIndex":1,"score":85,"fase":"pregacao","criteria":{"gancho":22,"emocao":17,"velocidade":8,"tom":8,"impacto":18,"duracao":8,"retencao":4},"reason":"motivo conciso"}]
+
+O campo "fase" deve ser um destes valores: "pregacao" (bloco de ensino/pregação, pontuado normalmente), "abertura", "avisos", "dizimo_oferta", ou "louvor" (qualquer um destes = nota máxima 5).`;
+  const sysFinal   = `Você é um editor sênior de YouTube Shorts especialista em retenção de audiência em português. Com base nos melhores blocos e a transcrição SRT completa, selecione de 5 a 8 clipes finais avaliando 7 critérios. IMPORTANTE: os blocos que você recebeu já passaram por um filtro que descarta abertura do culto, avisos, apelo de dízimo/oferta e louvor — mas se, mesmo assim, algum trecho da transcrição SRT completa pertencer a uma dessas fases (isso pode acontecer nas bordas de um bloco, no início ou no fim), NUNCA selecione um clipe dali. Todo clipe final deve vir exclusivamente da pregação/mensagem principal (\"a palavra\") — nunca de abertura/boas-vindas, avisos/recados, apelo de dízimos e ofertas, ou louvor/música.
 
 1. GANCHO INICIAL (obrigatório): Clipe começa com frase que prende nos 3s? Sem gancho = descartado.
 2. EMOÇÃO NA FALA: Priorize linguagem emocional — surpresa, entusiasmo, indignação, empatia.
 3. VELOCIDADE DA FALA: Use timestamps SRT para calcular ritmo (palavras/segundo). Ideal 2-3 p/s.
 4. MUDANÇA DE TOM: Prefira trechos com variação de energia (pergunta→resposta, problema→solução, exclamações).
 5. PALAVRAS DE IMPACTO: Favoreça trechos com: segredo, erro, nunca, sempre, incrível, revelação, cuidado, atenção, simples, impossível.
-6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento — sem limite rígido: capture o raciocínio completo. NUNCA trunque para caber no tempo.
+6. DURAÇÃO IDEAL: 40-70s preferencialmente. Mínimo ${MIN}s. TETO ABSOLUTO E INEGOCIÁVEL: 180 segundos (3 minutos — limite técnico do YouTube Shorts e do pipeline; qualquer clipe acima disso é descartado automaticamente pelo código, mesmo que você o retorne). Se o raciocínio não couber em ${MAX}s, avance o 'end' até completar o pensamento, MAS NUNCA passe de 180s totais. Se o pensamento completo precisar de mais de 180s, NÃO tente abarcar tudo: escolha o melhor ponto de conclusão intermediário (uma pausa real de fala que também feche uma ideia, mesmo que não seja o fechamento perfeito do argumento inteiro) que fique DENTRO do teto de 180s a partir do start. NUNCA trunque no meio de uma frase ou palavra, e NUNCA retorne um clipe com mais de 180s.
 7. RETENÇÃO ESTIMADA: O clipe cria tensão/curiosidade suficiente para ser assistido até o fim?
 
-PASSO 1 — PONTOS DE CONCLUSÃO: Leia TODA a transcrição e identifique 15–25 momentos onde o pregador conclui um pensamento completo (responde uma pergunta, fecha uma ilustração, resume um ponto, resolve um argumento). Liste cada um com timestamp e resumo de 5 palavras.
-ATENÇÃO: a transcrição NÃO tem pontuação (gerada por whisper.cpp). Use os GAPS nos timestamps SRT como sinal PRIMÁRIO de pausa natural: quando o início de um bloco SRT está ≥0.5s após o fim do bloco anterior, há uma pausa real no áudio — esse é candidato natural para 'end'. Ex: bloco termina em 00:01:08,400 e próximo começa em 00:01:09,100 → gap 0.7s → excelente ponto de corte. Além disso, identifique conclusões por: (1) palavras-sinal como "então", "portanto", "por isso", "fica aqui", "entende", "lembra disso", "ou seja"; (2) mudança clara de assunto; (3) afirmação com tom definitivo que encerra o argumento. NÃO marque pausa no meio de enumeração ou lista.
+⚠️ FORMATO DE TIMESTAMP OBRIGATÓRIO: todos os valores de 't', 'start' e 'end' devem ser em SEGUNDOS TOTAIS (número decimal). Converta o formato SRT HH:MM:SS,mmm assim: segundos = H×3600 + M×60 + S + mmm/1000. Exemplos: 00:01:08,400 → 68.4 | 00:37:28,000 → 2248.0 | 00:02:04,100 → 124.1. NUNCA use o formato MM.SS como decimal — 02:04 NÃO é 2.04, é 124 segundos.
 
-PASSO 2 — SELEÇÃO DE CLIPES (de 5 a 8, seja generoso): Para cada clipe: (a) escolha 'start' com gancho forte nos primeiros 3s; (b) o 'end' DEVE ser um dos pontos de conclusão do PASSO 1 que caia a partir de start+40s (sem teto fixo — capture o raciocínio completo) — preferencialmente o timestamp de FIM de um bloco SRT seguido de gap ≥0.5s; (c) se nenhum ponto de conclusão estiver nessa janela, avance o 'start' ou escolha outro trecho; (d) o 'start' de cada clipe deve ser MAIOR que o 'end' do clipe anterior — sem sobreposição. Prefira retornar 8 clipes.
+PASSO 1 — PONTOS DE CONCLUSÃO: Você vai receber um CHECKLIST OBRIGATÓRIO DE COBERTURA no início da mensagem do usuário, com janelas de tempo do vídeo — siga-o à risca, é mais importante que a ordem de leitura natural do texto. Leia TODA a transcrição, do início ao fim, e identifique 15–25 momentos onde o pregador conclui um pensamento completo (responde uma pergunta, fecha uma ilustração, resume um ponto, resolve um argumento). IMPORTANTE: como pregadores costumam falar em arcos longos, procure ATIVAMENTE por pontos de conclusão intermediários dentro de cada raciocínio longo (a cada 40-180s), não só no fechamento final do argumento inteiro — isso garante que sempre exista uma opção de 'end' dentro do teto de 180s no PASSO 2. Os pontos DEVEM estar espalhados por TODA a duração informada, cobrindo CADA janela do checklist com pelo menos 2 pontos — se você notar que todos os seus pontos estão concentrados numa janela pequena do início, PARE, releia o restante da transcrição SRT completa (fornecida no final da mensagem) e adicione pontos das partes posteriores antes de prosseguir. Liste cada um com timestamp (em SEGUNDOS TOTAIS) e resumo de 5 palavras.
+ATENÇÃO: a transcrição NÃO tem pontuação (gerada por whisper.cpp) e JÁ FOI PRÉ-PROCESSADA — um passo anterior mesclou automaticamente pausas de respiração (gap < 0.5s) nos blocos SRT antes deste texto chegar até você. Isso significa que TODA quebra de bloco SRT que você vê aqui já representa uma pausa real de fala (≥0.5s) — você NÃO precisa calcular gaps manualmente, eles já foram filtrados. Mas isso NÃO é suficiente sozinho: uma pausa real também pode acontecer no meio de uma enumeração, antes de uma vírgula falada ou entre uma conjunção — nesses casos a quebra de bloco SRT é uma pausa real, mas NÃO é uma conclusão de pensamento. Use o fim de um bloco SRT como candidato a 'end' SOMENTE quando o conteúdo também fechar o raciocínio. Sinais adicionais de conclusão: (1) palavras-sinal como "então", "portanto", "por isso", "fica aqui", "entende", "lembra disso", "ou seja"; (2) mudança clara de assunto; (3) afirmação com tom definitivo que encerra o argumento. NÃO marque como conclusão o fim de um bloco que esteja no meio de enumeração ou lista, mesmo que a pausa seja real.
+
+PASSO 2 — SELEÇÃO DE CLIPES (de 5 a 8, seja generoso): Para cada clipe: (a) escolha 'start' com gancho forte nos primeiros 3s; (b) o 'end' DEVE ser um dos pontos de conclusão do PASSO 1 que caia ENTRE start+40s E start+180s (nunca antes, nunca depois — 180s é o teto absoluto, sem exceções) — sempre o timestamp de FIM de um bloco SRT (pausa real já garantida pelo pré-processamento); (c) se nenhum ponto de conclusão estiver nessa janela de start+40s a start+180s, avance o 'start' ou escolha outro trecho — NUNCA escolha um 'end' acima de start+180s só para fechar o raciocínio perfeitamente; (d) o 'start' de cada clipe deve ser ao menos 10s DEPOIS do 'end' do clipe anterior — NUNCA contíguo; (e) os clipes finais DEVEM vir de pelo menos 4 janelas diferentes do checklist de cobertura — não concentre todos os clipes nas primeiras janelas do vídeo. Prefira retornar 8 clipes. Lembre: 'start' e 'end' em SEGUNDOS TOTAIS (ex: start=124.1, end=248.5), e (end - start) NUNCA maior que 180.
 
 REGRAS INEGOCIÁVEIS:
+- NENHUM clipe pode vir de abertura do culto, boas-vindas, avisos/recados, apelo de dízimo e oferta, ou louvor/música — somente da pregação/mensagem principal. Se um ponto de conclusão do PASSO 1 estiver dentro de um desses trechos, descarte-o e não o use como 'end' nem como 'start'.
 - 'end' obrigatoriamente em ponto de conclusão real. NUNCA em enumeração, vírgula ou conjunção.
+- DURAÇÃO DE CADA CLIPE (end - start) NUNCA PODE ULTRAPASSAR 180 SEGUNDOS. Este é um limite técnico rígido (YouTube Shorts + pipeline), não uma sugestão. Um clipe de 181s ou mais será descartado inteiro pelo sistema. Se um raciocínio precisar de mais tempo, escolha um ponto de conclusão intermediário real dentro do teto, em vez de tentar capturar o argumento inteiro.
 - Cortes em pausas de fala, nunca no meio de uma palavra.
 - Clipe autocontido: quem assiste sem contexto entende início, meio e fim.
-- Clipes NÃO se sobrepõem: 'start' de cada clipe deve ser maior que o 'end' do anterior.
+- Clipes NÃO se sobrepõem e NÃO são contíguos: 'start' de cada clipe deve ser ≥10s após o 'end' do anterior (gap mínimo obrigatório de 10s).
+- O CHECKLIST DE COBERTURA de janelas de tempo (fornecido no início da mensagem do usuário) é obrigatório: cada janela precisa de pelo menos 2 pontos de conclusão no PASSO 1, e os clipes finais devem vir de pelo menos 4 janelas diferentes.
 
 Retorne APENAS JSON sem markdown:
 {"conclusions":[{"t":68.9,"summary":"resumo"}],"clips":[{"start":12.4,"end":68.9,"title":"slug-curto","hook":"Frase exata de abertura","reason":"Por que funciona","retention_score":87}]}`;
@@ -1457,31 +565,99 @@ Retorne APENAS JSON sem markdown:
     ? `(($json.choices && $json.choices[0] && $json.choices[0].message && $json.choices[0].message.content) || '').trim()`
     : `(($json.candidates && $json.candidates[0] && $json.candidates[0].content && $json.candidates[0].content.parts && $json.candidates[0].content.parts[0] && $json.candidates[0].content.parts[0].text) || '').trim()`;
 
-  function makeAiNode(id, name, pos, sysPrompt, userExpr){
+  // Retorna [prepNode, httpNode].
+  // O prepNode (Code) monta o objeto JS nativo (sem JSON.stringify) para cada engine.
+  // O httpNode usa specifyBody:"keypair" — o n8n serializa os campos com json:true,
+  // evitando todos os problemas de rawBody/jsonBody com expressões longas.
+  function makeAiNode(prepId, id, name, pos, sysPrompt, userExpr){
     const sys = JSON.stringify(sysPrompt);
+    const prepPos = [pos[0]-200, pos[1]];
+    const prepName = `Preparar ${name}`;
+
+    // Code node retorna objeto nativo — sem JSON.stringify — para evitar double-encode
+    let returnLine, bodyParams;
     if (engine==='claude') {
-      return {id,name,type:"n8n-nodes-base.httpRequest",typeVersion:4,position:pos,
-        parameters:{method:"POST",url:"https://api.anthropic.com/v1/messages",
-          sendHeaders:true,
-          headerParameters:{parameters:[{name:"x-api-key",value:cfg.anthropicKey},{name:"anthropic-version",value:"2023-06-01"},{name:"content-type",value:"application/json"}]},
-          sendBody:true,bodyContentType:"json",specifyBody:"json",
-          jsonBody:`={{ JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4096, system: ${sys}, messages: [{ role: 'user', content: ${userExpr} }] }) }}`}};
+      returnLine = `return [{ json: { model: 'claude-sonnet-4-6', max_tokens: 4096, system: sys, messages: [{ role: 'user', content: userContent }] } }];`;
+      bodyParams = [
+        {name:"model",       value:"={{ $json.model }}"},
+        {name:"max_tokens",  value:"={{ $json.max_tokens }}"},
+        {name:"system",      value:"={{ $json.system }}"},
+        {name:"messages",    value:"={{ $json.messages }}"}
+      ];
     } else if (engine==='openai') {
-      return {id,name,type:"n8n-nodes-base.httpRequest",typeVersion:4,position:pos,
-        parameters:{method:"POST",url:"https://api.openai.com/v1/chat/completions",
-          sendHeaders:true,
-          headerParameters:{parameters:[{name:"Authorization",value:`Bearer ${cfg.openaiKey}`},{name:"content-type",value:"application/json"}]},
-          sendBody:true,bodyContentType:"json",specifyBody:"json",
-          jsonBody:`={{ JSON.stringify({ model: 'gpt-5.4-mini', messages: [{ role: 'system', content: ${sys} }, { role: 'user', content: ${userExpr} }] }) }}`}};
+      returnLine = `return [{ json: { model: 'gpt-5.4-mini', messages: [{ role: 'system', content: sys }, { role: 'user', content: userContent }] } }];`;
+      bodyParams = [
+        {name:"model",    value:"={{ $json.model }}"},
+        {name:"messages", value:"={{ $json.messages }}"}
+      ];
     } else {
-      return {id,name,type:"n8n-nodes-base.httpRequest",typeVersion:4,position:pos,
-        parameters:{method:"POST",url:`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${cfg.geminiKey}`,
-          sendHeaders:true,
-          headerParameters:{parameters:[{name:"content-type",value:"application/json"}]},
-          sendBody:true,bodyContentType:"json",specifyBody:"json",
-          jsonBody:`={{ JSON.stringify({ contents: [{ parts: [{ text: ${sys} + '\\n\\n' + ${userExpr} }] }], generationConfig: { responseMimeType: 'application/json' } }) }}`}};
+      returnLine = `return [{ json: { contents: [{ parts: [{ text: sys + '\\n\\n' + userContent }] }], generationConfig: { responseMimeType: 'application/json' } } }];`;
+      bodyParams = [
+        {name:"contents",         value:"={{ $json.contents }}"},
+        {name:"generationConfig", value:"={{ $json.generationConfig }}"}
+      ];
     }
+
+    const jsCode = `const sys = ${sys};\nconst userContent = ${userExpr};\n${returnLine}`;
+
+    const prepNode = {id:prepId,name:prepName,type:"n8n-nodes-base.code",typeVersion:2,position:prepPos,
+      parameters:{jsCode}};
+
+    const headers = engine==='claude'
+      ? [{name:"x-api-key",value:cfg.anthropicKey},{name:"anthropic-version",value:"2023-06-01"}]
+      : engine==='openai'
+      ? [{name:"Authorization",value:`Bearer ${cfg.openaiKey}`}]
+      : [];
+
+    const url = engine==='claude' ? "https://api.anthropic.com/v1/messages"
+              : engine==='openai' ? "https://api.openai.com/v1/chat/completions"
+              : `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${cfg.geminiKey}`;
+
+    const httpNode = {id,name,type:"n8n-nodes-base.httpRequest",typeVersion:4,position:pos,
+      parameters:{method:"POST",url,sendHeaders:true,
+        headerParameters:{parameters:headers},
+        sendBody:true,bodyContentType:"json",
+        specifyBody:"keypair",
+        bodyParameters:{parameters:bodyParams}}};
+
+    return [prepNode, httpNode];
   }
+
+  // PASSO 0 — pré-processamento do SRT antes de qualquer IA ver o texto.
+  // Mescla blocos SRT separados por < 0.5s (pausas de respiração) em um único bloco.
+  // Depois deste node, TODA quebra de bloco SRT remanescente já representa uma
+  // pausa real de fala (>=0.5s) — a IA não precisa mais calcular gaps manualmente,
+  // só decidir se o conteúdo também fecha um pensamento completo.
+  const mesclarPausasCode = `const raw = $json.stdout || '';
+const blocks = raw.split(/\\n\\n+/).map(b => {
+  const ls = b.trim().split('\\n');
+  const tl = ls.find(l => l.includes(' --> '));
+  if (!tl) return null;
+  const tm = tl.match(/(\\d+):(\\d+):(\\d+),(\\d+) --> (\\d+):(\\d+):(\\d+),(\\d+)/);
+  if (!tm) return null;
+  const s = +tm[1]*3600 + +tm[2]*60 + +tm[3] + +tm[4]/1000;
+  const e = +tm[5]*3600 + +tm[6]*60 + +tm[7] + +tm[8]/1000;
+  const txt = ls.filter(l => !l.match(/^\\d+$/) && !l.includes(' --> ')).join(' ').trim();
+  return { s, e, txt };
+}).filter(Boolean);
+const GAP_MIN = 0.5;
+const merged = [];
+for (const b of blocks) {
+  const last = merged[merged.length - 1];
+  if (last && (b.s - last.e) < GAP_MIN) {
+    last.e = b.e;
+    last.txt = (last.txt + ' ' + b.txt).trim();
+  } else {
+    merged.push({ s: b.s, e: b.e, txt: b.txt });
+  }
+}
+function fmt(t) {
+  const h = Math.floor(t/3600), m = Math.floor((t%3600)/60), s = Math.floor(t%60), ms = Math.round((t - Math.floor(t)) * 1000);
+  const pad = (n, l) => String(n).padStart(l||2, '0');
+  return pad(h)+':'+pad(m)+':'+pad(s)+','+pad(ms,3);
+}
+const mergedSrt = merged.map((b, i) => (i+1)+'\\n'+fmt(b.s)+' --> '+fmt(b.e)+'\\n'+b.txt).join('\\n\\n');
+return [{ json: { ...$json, stdout: mergedSrt, srtOriginalSegCount: blocks.length, srtMergedSegCount: merged.length } }];`;
 
   const dividirBlocosCode = `const srt = $json.stdout || '';
 const c = $('Preparar Whisper Blocos').first().json;
@@ -1512,59 +688,144 @@ const match = raw.match(/\\[[\\s\\S]*\\]/);
 if (!match) throw new Error('IA nao retornou JSON de blocos. Resposta: ' + raw.slice(0, 300));
 let scores; try { scores = JSON.parse(match[0]); } catch(e) { throw new Error('JSON invalido: ' + e.message); }
 if (!Array.isArray(scores)) scores = scores.blocks || scores.scores || [];
+// Seguranca de codigo: forca score=0 para qualquer bloco cuja fase (campo reportado pela IA) nao seja pregacao,
+// independente do numero que a IA tenha escrito - nao confia so no teto numerico de 5 sugerido no prompt.
+scores = scores.map(s => (s.fase && s.fase !== 'pregacao') ? { ...s, score: 0 } : s);
 scores.sort((a,b) => b.score - a.score);
-const qualified = scores.filter(s => s.score >= ${cfg.minBlockScore});
-if (qualified.length === 0) throw new Error('Nenhum bloco atingiu nota minima de ${cfg.minBlockScore}. Notas: ' + scores.map(s=>s.blockIndex+':'+s.score).join(', '));
+const MIN_SCORE = ${cfg.minBlockScore};
+let qualified = scores.filter(s => s.score >= MIN_SCORE);
+let usedFallback = false;
+let fallbackReason = null;
+
+if (qualified.length === 0) {
+  // FALLBACK: em vez de travar o pipeline inteiro quando nenhum bloco atinge a nota minima, usa os blocos
+  // de fase=pregacao (mesmo com nota baixa) como guia para a 2a IA, em vez de abortar a execucao.
+  // A 2a IA ("Selecao Final") recebe a transcricao COMPLETA de qualquer forma, nao so o resumo dos blocos
+  // aprovados - entao um bloco-score pessimista da 1a IA nao precisa impedir a analise fina do proximo passo.
+  // Isso e mais robusto do que continuar ajustando o prompt de scoring: 3 execucoes reais consecutivas
+  // (com prompts diferentes) travaram exatamente aqui para o mesmo video, sugerindo que a 1a IA e
+  // sistematicamente pessimista demais para sermoes de fala muito continua/repetitiva - mas isso nao
+  // significa que nao ha NENHUM recorte aproveitavel no video inteiro.
+  const pregacaoBlocks = scores.filter(s => s.fase === 'pregacao');
+  if (pregacaoBlocks.length === 0) {
+    const faseCounts = {};
+    scores.forEach(s => { const f = s.fase || 'desconhecida'; faseCounts[f] = (faseCounts[f]||0) + 1; });
+    const faseBreakdown = Object.entries(faseCounts).map(([f,n]) => f+':'+n).join(', ');
+    throw new Error('Nenhum bloco foi classificado como fase=pregacao pela IA - o video inteiro (ou a parte transcrita) pode ser abertura/avisos/dizimo/louvor, ou a IA classificou incorretamente. Distribuicao de fases: ' + faseBreakdown + '. Notas: ' + scores.map(s=>s.blockIndex+':'+s.score+'('+(s.fase||'?')+')').join(', '));
+  }
+  usedFallback = true;
+  fallbackReason = 'Nenhum bloco atingiu a nota minima de ' + MIN_SCORE + ' (maior nota entre os ' + pregacaoBlocks.length + ' blocos de pregacao: ' + Math.max(...pregacaoBlocks.map(s=>s.score)) + '). Prosseguindo mesmo assim com os blocos de pregacao disponiveis como guia - a selecao fina fica a cargo da 2a IA, que le a transcricao completa.';
+  qualified = pregacaoBlocks;
+}
+
 const allBlocks = JSON.parse($('Dividir em Blocos').first().json.blocks || '[]');
-const scoredBlocks = qualified.slice(0, 5).map(s => {
+const topN = usedFallback ? 8 : 5;
+const scoredBlocks = qualified.slice(0, topN).map(s => {
   const b = allBlocks.find(x => x.blockIndex === s.blockIndex) || {};
   return { blockIndex: s.blockIndex, score: s.score, reason: s.reason, start: b.start, end: b.end };
 });
 const topBlocksFull = allBlocks.filter(b => scoredBlocks.find(s => s.blockIndex === b.blockIndex));
 const c = $('Preparar Whisper Blocos').first().json;
 const summary = topBlocksFull.map(b => '=== Bloco ' + b.blockIndex + ' [' + b.start + 's-' + b.end + 's] (nota: ' + (scoredBlocks.find(s=>s.blockIndex===b.blockIndex)||{}).score + '/100) ===\\n' + b.text).join('\\n\\n');
-return [{ json: { ...c, srtContent: $('Dividir em Blocos').first().json.srtContent, topBlocksSummary: summary, scoredBlocks } }];`;
+return [{ json: { ...c, srtContent: $('Dividir em Blocos').first().json.srtContent, topBlocksSummary: summary, scoredBlocks, blockScoringFallback: usedFallback, blockScoringFallbackReason: fallbackReason } }];`;
 
   const montarClipesCode = `const raw = ${parseExpr};
 let parsed;
 try { parsed = JSON.parse(raw); } catch(_) { const m = raw.match(/\\{[\\s\\S]*\\}/) || raw.match(/\\[[\\s\\S]*\\]/); if (!m) throw new Error('IA nao retornou JSON de clipes. Resposta: ' + raw.slice(0, 300)); try { parsed = JSON.parse(m[0]); } catch(e) { throw new Error('JSON invalido: ' + e.message); } }
-const clips = (() => { if (Array.isArray(parsed)) return parsed; const c = parsed.clips||parsed.clipes||parsed.cortes; if (c) return c; const a = Object.values(parsed).filter(v=>Array.isArray(v)&&v.length>0&&v[0]&&v[0].start!=null); return a[a.length-1]||[]; })().slice(0, 8);
+let clips = (() => { if (Array.isArray(parsed)) return parsed; const c = parsed.clips||parsed.clipes||parsed.cortes; if (c) return c; const a = Object.values(parsed).filter(v=>Array.isArray(v)&&v.length>0&&v[0]&&v[0].start!=null); return a[a.length-1]||[]; })().slice(0, 8);
+// Salvaguarda: se a IA retornou timestamps em minutos (todos < 120 e vídeo longo), converte para segundos
+const _dur = $('Preparar Whisper Blocos').first().json.duration || 0;
+const _maxTs = clips.reduce((m,c)=>Math.max(m,c.end||0),0);
+if (clips.length > 0 && _maxTs > 0 && _maxTs < 120 && _dur > 600) {
+  clips = clips.map(c => ({...c, start: Math.round(c.start * 60 * 10) / 10, end: Math.round(c.end * 60 * 10) / 10}));
+}
 const c = $('Preparar Whisper Blocos').first().json;
 const vp = c.videoPath, vn = c.videoName;
+// Extrai o nome do pregador do nome do arquivo (padrão "... | Pr. Nome Sobrenome ...", com ou sem "Pra."),
+// para incluir junto da descrição (reason) de cada clipe quando disponível.
+const preacherMatch = (vn || '').match(/Pr\\.?a?\\.?\\s+([A-Za-zÀ-ÿ]+(?:\\s+[A-Za-zÀ-ÿ]+){0,4})/);
+const preacherName = preacherMatch ? preacherMatch[0].trim().replace(/\\s+/g,' ') : null;
 const base = '/home/node/.n8n-files/';
 const results = [];
 for (let i = 0; i < clips.length; i++) {
   const clip = clips[i];
   const dur = clip.end - clip.start;
   if (dur < ${MIN} - 10 || dur > 180) continue;
-  if (results.length > 0 && clip.start < results[results.length-1].clipEnd - 5) continue;
+  if (results.length > 0 && clip.start < results[results.length-1].clipEnd + 10) continue;
   const idx = String(results.length+1).padStart(2,'0');
-  const slug = (clip.title||'clip').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);
+  const titleSlug = (clip.title||'clip').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);
+  const preacherSlug = preacherName ? preacherName.replace(' ', '-') : null;
+  const slug = preacherSlug ? (preacherSlug + '_' + titleSlug) : titleSlug;
   const outPath   = base+'short_'+idx+'_'+slug+'.mp4';
   const audioPath = base+'clip_'+idx+'.wav';
   const srtBase   = base+'clip_'+idx;
   const srtPath   = srtBase+'.srt';
-  const metaPath  = base+'clip_'+idx+'_meta.json';
+  // O nome LOCAL do arquivo de metadados usa o mesmo padrão final (short_XX_slug) do outPath, em vez de
+  // um nome genérico (clip_XX_meta.json) — o node "Upload Metadados → OneDrive" não respeita o parâmetro
+  // fileName explícito e sempre sobe o arquivo usando o nome LOCAL do binário lido do disco, fazendo todo
+  // run sobrescrever sempre os mesmos ~8 arquivos genéricos no OneDrive. Alinhar o nome local ao nome
+  // final desejado corrige isso independente do motivo exato do node ignorar o parâmetro fileName.
+  const metaPath  = base+'short_'+idx+'_'+slug+'_meta.json';
   const ds = Math.round(dur);
   const scoredBlocks = $('Ranking dos Blocos').first().json.scoredBlocks || [];
   const blockScore = scoredBlocks.find(s => clip.start >= (s.start||0) && clip.start < (s.end||9999));
-  const metaContent = JSON.stringify({ index:results.length+1, title:clip.title, slug, hook:clip.hook||'', reason:clip.reason||'', retention_score: clip.retention_score||null, block_score: blockScore ? blockScore.score : null, criteria: blockScore ? blockScore.criteria||null : null, start:clip.start, end:clip.end, duration:Math.floor(ds/60)+'m'+(ds%60)+'s', videoSource:vn }, null, 2);
+  const clipReason = preacherName ? (preacherName + ' — ' + (clip.reason||'')) : (clip.reason||'');
+  const metaContent = JSON.stringify({ index:results.length+1, title:clip.title, slug, hook:clip.hook||'', reason:clipReason, retention_score: clip.retention_score||null, block_score: blockScore ? blockScore.score : null, criteria: blockScore ? blockScore.criteria||null : null, start:clip.start, end:clip.end, duration:Math.floor(ds/60)+'m'+(ds%60)+'s', videoSource:vn }, null, 2);
   results.push({ clipStart:Math.max(0,clip.start), clipEnd:clip.end, idx, titleSlug:slug, hook:clip.hook||'', reason:clip.reason||'', videoPath:vp, videoName:vn, outPath, audioPath${sub ? ', srtBase, srtPath' : ''}, metaPath, metaContent });
+}
+if (results.length === 0) {
+  const debugInfo = clips.map(cl => ({ start: cl.start, end: cl.end, dur: +((cl.end||0) - (cl.start||0)).toFixed(1) }));
+  const durs = debugInfo.map(d => d.dur);
+  const maxTs2 = clips.reduce((m,c)=>Math.max(m,c.end||0),0);
+  const overCap = durs.filter(d => d > 180).length;
+  const tooShort = durs.filter(d => d < (${MIN} - 10)).length;
+  const spanClips = maxTs2 - clips.reduce((m,c)=>Math.min(m,c.start||Infinity),Infinity);
+  let causaProvavel;
+  if (overCap > 0 && overCap === clips.length) {
+    causaProvavel = 'TODOS os ' + overCap + ' clipes retornados pela IA excedem o teto de 180s (duracoes: ' + durs.join(', ') + 's). A IA nao respeitou o limite de duracao do PASSO 2 — verifique se o prompt sysFinal ainda menciona claramente o teto de 180s, ou se a IA esta ignorando a instrucao.';
+  } else if (overCap > 0) {
+    causaProvavel = overCap + ' de ' + clips.length + ' clipes excedem 180s (duracoes: ' + durs.join(', ') + 's) — parte do problema e teto de duracao, parte pode ser outro filtro (gap minimo ou duracao curta demais).';
+  } else if (tooShort > 0 && tooShort === clips.length) {
+    causaProvavel = 'TODOS os clipes ficaram abaixo da duracao minima (' + (${MIN} - 10) + 's). Duracoes retornadas: ' + durs.join(', ') + 's.';
+  } else if (maxTs2 > 0 && maxTs2 < 120 && _dur > 600) {
+    causaProvavel = 'timestamps parecem estar em MINUTOS em vez de SEGUNDOS TOTAIS (maior timestamp retornado: ' + maxTs2 + ', duracao real do video: ' + _dur + 's) — a salvaguarda de conversao x60 nao disparou ou nao foi suficiente.';
+  } else if (spanClips > 0 && spanClips < _dur * 0.15) {
+    causaProvavel = 'a IA concentrou os pontos de conclusao numa janela pequena (' + spanClips.toFixed(0) + 's de intervalo, video tem ' + _dur + 's) em vez de espalhar por todo o video — ver checklist de cobertura no prompt.';
+  } else {
+    causaProvavel = 'gap minimo de 10s entre clipes provavelmente descartou clipes proximos demais uns dos outros, ou combinacao de fatores — ver debugInfo abaixo.';
+  }
+  throw new Error('Nenhum clipe passou nos filtros de duracao (min ' + (${MIN} - 10) + 's, max 180s) ou gap minimo (10s). A IA retornou ' + clips.length + ' clipes brutos: ' + JSON.stringify(debugInfo) + '. Duracao do video: ' + _dur + 's. Causa provavel: ' + causaProvavel);
 }
 return results;`;
 
   const nodes = [
     {id:"b0",name:"Iniciar Manualmente",type:"n8n-nodes-base.manualTrigger",typeVersion:1,position:[80,300],parameters:{}},
+    // Trigger agendado (6h) — sem ele o workflow nunca pode ser "publicado/ativo" no n8n (exige pelo menos
+    // 1 trigger de webhook/agendamento/polling, Manual Trigger sozinho não conta). Isso importa porque o node
+    // "Disparar Próximo Vídeo" (self-chaining da fila) chama este workflow por ID, e essa chamada só encontra
+    // a versão PUBLICADA do workflow — sem publish, o self-chaining falha com "Workflow is not active and
+    // cannot be executed" (descoberto em produção em 17/07/2026, após a cadeia quebrar na 3ª tentativa real).
+    // Além de destravar a publicação, este trigger também funciona como rede de segurança: mesmo que a cadeia
+    // quebre de novo por outro motivo, a próxima checagem agendada retoma a fila sozinha.
+    {id:"b0a",name:"A Cada 6 Horas",type:"n8n-nodes-base.scheduleTrigger",typeVersion:1.2,position:[80,180],
+     parameters:{rule:{interval:[{field:"hours",hoursInterval:6}]}}},
     {id:"b0b",name:"Resolver Pasta",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[220,300],
      parameters:{method:"GET",url:"https://graph.microsoft.com/v1.0/me/drive/root:/"+cfg.onedriveFolder,authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
-    {id:"b1",name:"Listar Arquivos",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[380,300],
-     parameters:{method:"GET",url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $json.id }}/children",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
+    {id:"b0c",name:"Resolver Pasta Saída",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[380,300],
+     parameters:{method:"GET",url:"https://graph.microsoft.com/v1.0/me/drive/root:/"+cfg.outputFolder,authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
+    {id:"b1",name:"Listar Arquivos",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[560,300],
+     parameters:{method:"GET",url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $('Resolver Pasta').first().json.id }}/children",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
     {id:"b1b",name:"Selecionar Vídeo",type:"n8n-nodes-base.code",typeVersion:2,position:[540,300],
-     parameters:{jsCode:"const items = ($json.value || []).filter(f => /\\.(mp4|mkv|webm|mov|avi)$/i.test(f.name));\nif (items.length === 0) throw new Error('Nenhum video encontrado na pasta');\nreturn [{ json: items[0] }];\n"}},
-    {id:"b2",name:"Baixar Vídeo",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[960,300],
-     parameters:{resource:"file",operation:"download",fileId:"={{ $json.id }}"}},
-    {id:"b3",name:"Salvar na VPS",type:"n8n-nodes-base.writeBinaryFile",typeVersion:1,position:[1100,300],
-     parameters:{fileName:"=/home/node/.n8n-files/{{ $('Selecionar Vídeo').first().json.name }}",dataPropertyName:"data"}},
+     parameters:{jsCode:"const allVideos = ($json.value || []).filter(f => /\\.(mp4|mkv|webm|mov|avi)$/i.test(f.name));\nconst MIN_SIZE = 1024 * 1024; // 1MB - abaixo disso, quase certamente ainda sincronizando com o OneDrive\n\n// Nao encontrar video (fila vazia) ou encontrar so videos ainda sincronizando NAO sao erros de verdade -\n// sao estados esperados, especialmente com o Schedule Trigger rodando a cada 6h mesmo sem nada novo na fila.\n// Por isso retornamos um item normal com videoFound:false + mensagem, em vez de lancar throw new Error(...)\n// (que marcava a execucao inteira como \"error\" no historico do n8n). O node \"Video Encontrado?\" logo depois\n// decide se segue o pipeline (true) ou para por ali (false), sem gerar nenhum erro.\nif (allVideos.length === 0) {\n  return [{ json: { videoFound: false, message: 'Nenhum video encontrado na pasta Videos-Cortes no momento - fila vazia, nada a processar.' } }];\n}\n\nconst ready = allVideos.filter(f => (f.size || 0) > MIN_SIZE);\nif (ready.length === 0) {\n  const pending = allVideos.map(f => f.name + ' (' + (f.size || 0) + ' bytes)').join(', ');\n  return [{ json: { videoFound: false, message: 'O(s) video(s) encontrado(s) na pasta ainda parece(m) estar sincronizando com o OneDrive (tamanho 0 ou muito pequeno): ' + pending + '. O desktop client do OneDrive pode levar minutos (ou mais, para arquivos grandes de culto ao vivo) para terminar o upload. Aguarde a sincronizacao completar e rode o workflow novamente (ou aguarde a proxima checagem agendada).' } }];\n}\n\nreturn [{ json: { videoFound: true, ...ready[0] } }];\n"}},
+    {id:"b1e",name:"Vídeo Encontrado?",type:"n8n-nodes-base.if",typeVersion:2.3,position:[620,300],
+     parameters:{conditions:{combinator:"and",options:{caseSensitive:true,leftValue:"",typeValidation:"strict",version:2},conditions:[{leftValue:"={{ $json.videoFound }}",rightValue:true,operator:{type:"boolean",operation:"equals"}}]}}},
+    {id:"b1c",name:"Verificar Trava de Execução",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[700,300],
+     parameters:{command:"=LOCK_FILE=\"/home/node/.n8n-files/.processing.lock\"\nMAX_AGE=28800\nNOW=$(date +%s)\nif [ -f \"$LOCK_FILE\" ]; then\n  LOCK_MTIME=$(stat -c %Y \"$LOCK_FILE\" 2>/dev/null || echo 0)\n  AGE=$((NOW - LOCK_MTIME))\n  if [ \"$AGE\" -lt \"$MAX_AGE\" ]; then\n    echo \"STATUS:LOCKED\"\n    echo \"LOCK_CONTENT:$(cat \"$LOCK_FILE\")\"\n    echo \"LOCK_AGE_SECONDS:$AGE\"\n    exit 0\n  else\n    echo \"STATUS:STALE_OVERRIDE\"\n    echo \"LOCK_AGE_SECONDS:$AGE\"\n  fi\nfi\necho \"{{ $json.name }}|$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > \"$LOCK_FILE\"\necho \"STATUS:ACQUIRED\""}},
+    {id:"b1d",name:"Aplicar Trava",type:"n8n-nodes-base.code",typeVersion:2,position:[830,300],
+     parameters:{jsCode:"const out = $json.stdout || '';\nif (out.includes('STATUS:LOCKED')) {\n  const lockContentMatch = out.match(/LOCK_CONTENT:(.+)/);\n  const ageMatch = out.match(/LOCK_AGE_SECONDS:(\\d+)/);\n  const lockContent = lockContentMatch ? lockContentMatch[1].trim() : 'desconhecido|desconhecido';\n  const [lockedVideo, lockedAt] = lockContent.split('|');\n  const ageSeconds = ageMatch ? parseInt(ageMatch[1]) : 0;\n  const ageHours = (ageSeconds / 3600).toFixed(1);\n  throw new Error('Ja existe outra execucao em andamento processando o video \"' + (lockedVideo || 'desconhecido') + '\" (iniciada em ' + (lockedAt || '?') + ', ha ' + ageHours + 'h). Esta execucao foi interrompida automaticamente para evitar rodar 2 transcricoes whisper.cpp simultaneas na mesma VPS - o servidor tem so 6 nucleos e o whisper.cpp ja usa todos eles (-t 6) por execucao, entao rodar 2 ao mesmo tempo deixa as duas extremamente lentas (ou travadas) em vez de mais rapidas. Aguarde a execucao em andamento terminar (tipicamente ~5h para um video de ~2h de culto) e rode este workflow novamente - ele vai pegar automaticamente o proximo video disponivel na pasta. Se a execucao anterior travou ou falhou sem limpar a trava, ela expira sozinha apos 8h; ou apague manualmente o arquivo /home/node/.n8n-files/.processing.lock na VPS para liberar antes disso.');\n}\nreturn [{ json: $('Selecionar Vídeo').first().json }];\n"}},
+    {id:"b2",name:"Baixar Vídeo",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[960,300],
+     retryOnFail:true,maxTries:3,waitBetweenTries:5000,
+     parameters:{command:"=wget -q --tries=5 --waitretry=10 -O \"/home/node/.n8n-files/{{ $json.name }}\" \"{{ $json['@microsoft.graph.downloadUrl'] }}\" && SIZE=$(stat -c%s \"/home/node/.n8n-files/{{ $json.name }}\" 2>/dev/null || echo 0) && echo \"Download concluido: ${SIZE} bytes\" && if [ \"$SIZE\" -lt 1048576 ]; then echo \"ERRO: arquivo baixado tem menos de 1MB - download provavelmente falhou\" >&2; exit 1; fi"}},
     {id:"b4",name:"Preparar Caminhos",type:"n8n-nodes-base.code",typeVersion:2,position:[1280,300],
      parameters:{jsCode:"const t = $('Selecionar Vídeo').first().json;\nconst base = '/home/node/.n8n-files/';\nreturn [{ json: { videoName: t.name, videoPath: base + t.name, audioPath: base + 'audio_full.wav' }}];\n"}},
     {id:"b5",name:"FFprobe + Extrair Áudio",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[880,300],
@@ -1572,19 +833,40 @@ return results;`;
     {id:"b6",name:"Preparar Whisper Blocos",type:"n8n-nodes-base.code",typeVersion:2,position:[1060,300],
      parameters:{jsCode:"const c = $('Preparar Caminhos').first().json;\nconst out = $json.stdout || '';\nconst m = out.match(/DURATION:([\\d.]+)/);\nconst duration = m ? parseFloat(m[1]) : 0;\nconst srtBase = '/home/node/.n8n-files/transcript_full';\nreturn [{ json: { ...c, duration, srtBase, srtPath: srtBase + '.srt' } }];\n"}},
     {id:"b7",name:"Whisper.cpp Transcrever",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1240,300],
-     parameters:{command:`=whisper -m /models/ggml-small.bin -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"`}},
+     parameters:{command:`=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"`}},
+    {id:"b7b",name:"Mesclar Pausas Curtas",type:"n8n-nodes-base.code",typeVersion:2,position:[1330,300],
+     parameters:{jsCode:mesclarPausasCode}},
     {id:"b8",name:"Dividir em Blocos",type:"n8n-nodes-base.code",typeVersion:2,position:[1420,300],
      parameters:{jsCode:dividirBlocosCode}},
-    makeAiNode("b9",analiseNodeName,[1600,300],sysAnalise,`'Duração: ' + $json.duration + 's. Blocos:\\n' + $json.blocks`),
-    {id:"b10",name:"Ranking dos Blocos",type:"n8n-nodes-base.code",typeVersion:2,position:[1780,300],
+    ...makeAiNode("b9p","b9",analiseNodeName,[1600,300],sysAnalise,`'Duração: ' + $json.duration + 's. Blocos:\\n' + $json.blocks`),
+    {id:"b10",name:"Ranking dos Blocos",type:"n8n-nodes-base.code",typeVersion:2,position:[1980,300],
      parameters:{jsCode:rankingCode}},
-    makeAiNode("b11",finalNodeName,[1960,300],sysFinal,`'Melhores blocos (com timestamps):\\n\\n' + $json.topBlocksSummary + '\\n\\nSRT completo (para timestamps precisos):\\n' + $json.srtContent`),
+    ...makeAiNode("b11p","b11",finalNodeName,[2340,300],sysFinal,`(function(){
+  const _dur = $json.duration || 0;
+  const N_BUCKETS = 6;
+  const bucketSize = _dur / N_BUCKETS;
+  let bucketList = '';
+  for (let i = 0; i < N_BUCKETS; i++) {
+    const bStart = Math.round(i * bucketSize);
+    const bEnd = Math.round((i + 1) * bucketSize);
+    bucketList += (i+1) + '. ' + bStart + 's–' + bEnd + 's — pelo menos 2 pontos de conclusão aqui\\n';
+  }
+  return 'DURAÇÃO TOTAL DO VÍDEO: ' + _dur + ' segundos (aproximadamente ' + Math.round(_dur/60) + ' minutos).\\n\\nCHECKLIST OBRIGATÓRIO DE COBERTURA: o vídeo foi dividido em ' + N_BUCKETS + ' janelas de tempo iguais. Antes de finalizar o PASSO 1, você DEVE ter pelo menos 2 pontos de conclusão em CADA uma das janelas abaixo. Se alguma janela estiver vazia, volte e releia essa parte da transcrição SRT completa (fornecida no final desta mensagem) antes de responder — isso não é opcional:\\n' + bucketList + '\\nOs clipes finais do PASSO 2 também devem vir de pelo menos 4 janelas diferentes — não concentre todos os clipes nas primeiras janelas.\\n\\nMelhores blocos (com timestamps):\\n\\n' + $json.topBlocksSummary + '\\n\\nSRT completo (para timestamps precisos):\\n' + $json.srtContent;
+})()`),
     {id:"b12",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[2140,300],
      parameters:{jsCode:montarClipesCode}},
     {id:"b13",name:"Loop Over Items",type:"n8n-nodes-base.splitInBatches",typeVersion:3,position:[2320,300],
      parameters:{batchSize:1,options:{}}},
     {id:"b26",name:"Limpar Vídeo Original",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[700,160],
-     parameters:{command:`=rm -f "{{ $('Preparar Caminhos').first().json.videoPath }}" "{{ $('Preparar Caminhos').first().json.audioPath }}" "{{ $('Preparar Whisper Blocos').first().json.srtPath }}"`}}
+     parameters:{command:`=rm -f "{{ $('Preparar Caminhos').first().json.videoPath }}" "{{ $('Preparar Caminhos').first().json.audioPath }}" "{{ $('Preparar Whisper Blocos').first().json.srtPath }}" /home/node/.n8n-files/.processing.lock`}},
+    {id:"b27",name:"Mover Vídeo Processado",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[880,160],
+     parameters:{method:"PATCH",url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $('Selecionar Vídeo').first().json.id }}",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",sendBody:true,specifyBody:"keypair",bodyParameters:{parameters:[{name:"parentReference",value:`={{ { path: '/drive/root:/${cfg.onedriveFolder}/Videos' } }}`}]},options:{}}},
+    {id:"b28",name:"Listar Arquivos (Verificar Fila)",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[1060,160],
+     parameters:{url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $('Resolver Pasta').first().json.id }}/children",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
+    {id:"b29",name:"Decidir Próximo Vídeo",type:"n8n-nodes-base.code",typeVersion:2,position:[1240,160],
+     parameters:{jsCode:"const allVideos = ($json.value || []).filter(f => /\\.(mp4|mkv|webm|mov|avi)$/i.test(f.name));\nconst MIN_SIZE = 1024 * 1024;\nconst ready = allVideos.filter(f => (f.size || 0) > MIN_SIZE);\nif (ready.length === 0) {\n  return [];\n}\nreturn [{ json: { nextVideoCount: ready.length, nextVideoName: ready[0].name } }];\n"}},
+    {id:"b30",name:"Disparar Próximo Vídeo",type:"n8n-nodes-base.executeWorkflow",typeVersion:1.3,position:[1420,160],
+     parameters:{source:"database",workflowId:{__rl:true,mode:"id",value:cfg.n8nWorkflowId||"ID4wisnN4Tqpt2zh"},mode:"once",options:{waitForSubWorkflow:false}}}
   ];
 
   if (sub) {
@@ -1594,7 +876,7 @@ return results;`;
       {id:"b15",name:"Preparar Whisper Clipe",type:"n8n-nodes-base.code",typeVersion:2,position:[2720,440],
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
       {id:"b16",name:"Whisper.cpp Transcrever Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2900,440],
-       parameters:{command:`=whisper -m /models/ggml-small.bin -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np${wordFlags} && tr 'a-zàáâãéêíóôõúç' 'A-ZÀÁÂÃÉÊÍÓÔÕÚÇ' < "{{ $json.srtPath }}" > "{{ $json.srtPath }}.tmp" && mv "{{ $json.srtPath }}.tmp" "{{ $json.srtPath }}"`}},
+       parameters:{command:`=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np${wordFlags} && tr 'a-zàáâãéêíóôõúç' 'A-ZÀÁÂÃÉÊÍÓÔÕÚÇ' < "{{ $json.srtPath }}" > "{{ $json.srtPath }}.tmp" && mv "{{ $json.srtPath }}.tmp" "{{ $json.srtPath }}"`}},
       {id:"b17",name:"Preparar Corte Final",type:"n8n-nodes-base.code",typeVersion:2,position:[3080,440],
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}}
     );
@@ -1617,13 +899,15 @@ return results;`;
     {id:"b20",name:"Ler Short do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[3620,440],
      parameters:{filePath:"={{ $json.outPath }}",dataPropertyName:"data"}},
     {id:"b21",name:"Upload Short → OneDrive",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[3800,440],
-     parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura').item.json.idx + '_' + $('Preparar Leitura').item.json.titleSlug + '.mp4' }}",parentId:"={{ $('Resolver Pasta').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
+     parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura').item.json.idx + '_' + $('Preparar Leitura').item.json.titleSlug + '.mp4' }}",parentId:"={{ $('Resolver Pasta Saída').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
     {id:"b22",name:"Preparar Leitura Meta",type:"n8n-nodes-base.code",typeVersion:2,position:[3980,440],
      parameters:{jsCode:"const clip = $('Loop Over Items').item.json;\nreturn [{ json: { metaPath: clip.metaPath, idx: clip.idx, titleSlug: clip.titleSlug, videoName: clip.videoName }}];\n"}},
     {id:"b23",name:"Ler Metadados do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[4160,440],
      parameters:{filePath:"={{ $json.metaPath }}",dataPropertyName:"data"}},
     {id:"b24",name:"Upload Metadados → OneDrive",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[4340,440],
-     parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura Meta').item.json.idx + '_' + $('Preparar Leitura Meta').item.json.titleSlug + '_meta.json' }}",parentId:"={{ $('Resolver Pasta').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
+     parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura Meta').item.json.idx + '_' + $('Preparar Leitura Meta').item.json.titleSlug + '_meta.json' }}",parentId:"={{ $('Resolver Pasta Saída').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
     {id:"b25",name:"Limpar Arquivos do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[4520,440],
      parameters:{command:`=rm -f "{{ $('Loop Over Items').item.json.outPath }}" "{{ $('Loop Over Items').item.json.metaPath }}"${sub ? ` "{{ $('Loop Over Items').item.json.audioPath }}" "{{ $('Loop Over Items').item.json.srtPath }}"` : ''}`}}
   );
@@ -1631,21 +915,32 @@ return results;`;
   const firstLoopNode = sub ? "Extrair Áudio do Clipe" : cutNodeName;
   const connections = {
     "Iniciar Manualmente":{main:[[{node:"Resolver Pasta",type:"main",index:0}]]},
-    "Resolver Pasta":{main:[[{node:"Listar Arquivos",type:"main",index:0}]]},
+    "A Cada 6 Horas":{main:[[{node:"Resolver Pasta",type:"main",index:0}]]},
+    "Resolver Pasta":{main:[[{node:"Resolver Pasta Saída",type:"main",index:0}]]},
+    "Resolver Pasta Saída":{main:[[{node:"Listar Arquivos",type:"main",index:0}]]},
     "Listar Arquivos":{main:[[{node:"Selecionar Vídeo",type:"main",index:0}]]},
-    "Selecionar Vídeo":{main:[[{node:"Baixar Vídeo",type:"main",index:0}]]},
-    "Baixar Vídeo":{main:[[{node:"Salvar na VPS",type:"main",index:0}]]},
-    "Salvar na VPS":{main:[[{node:"Preparar Caminhos",type:"main",index:0}]]},
+    "Selecionar Vídeo":{main:[[{node:"Vídeo Encontrado?",type:"main",index:0}]]},
+    "Vídeo Encontrado?":{main:[[{node:"Verificar Trava de Execução",type:"main",index:0}]]},
+    "Verificar Trava de Execução":{main:[[{node:"Aplicar Trava",type:"main",index:0}]]},
+    "Aplicar Trava":{main:[[{node:"Baixar Vídeo",type:"main",index:0}]]},
+    "Baixar Vídeo":{main:[[{node:"Preparar Caminhos",type:"main",index:0}]]},
     "Preparar Caminhos":{main:[[{node:"FFprobe + Extrair Áudio",type:"main",index:0}]]},
     "FFprobe + Extrair Áudio":{main:[[{node:"Preparar Whisper Blocos",type:"main",index:0}]]},
     "Preparar Whisper Blocos":{main:[[{node:"Whisper.cpp Transcrever",type:"main",index:0}]]},
-    "Whisper.cpp Transcrever":{main:[[{node:"Dividir em Blocos",type:"main",index:0}]]},
-    "Dividir em Blocos":{main:[[{node:analiseNodeName,type:"main",index:0}]]},
+    "Whisper.cpp Transcrever":{main:[[{node:"Mesclar Pausas Curtas",type:"main",index:0}]]},
+    "Mesclar Pausas Curtas":{main:[[{node:"Dividir em Blocos",type:"main",index:0}]]},
+    "Dividir em Blocos":{main:[[{node:`Preparar ${analiseNodeName}`,type:"main",index:0}]]},
+    [`Preparar ${analiseNodeName}`]:{main:[[{node:analiseNodeName,type:"main",index:0}]]},
     [analiseNodeName]:{main:[[{node:"Ranking dos Blocos",type:"main",index:0}]]},
-    "Ranking dos Blocos":{main:[[{node:finalNodeName,type:"main",index:0}]]},
+    "Ranking dos Blocos":{main:[[{node:`Preparar ${finalNodeName}`,type:"main",index:0}]]},
+    [`Preparar ${finalNodeName}`]:{main:[[{node:finalNodeName,type:"main",index:0}]]},
     [finalNodeName]:{main:[[{node:"Montar Clipes",type:"main",index:0}]]},
     "Montar Clipes":{main:[[{node:"Loop Over Items",type:"main",index:0}]]},
-    "Loop Over Items":{main:[[{node:"Limpar Vídeo Original",type:"main",index:0}],[{node:firstLoopNode,type:"main",index:0}]]}
+    "Loop Over Items":{main:[[{node:"Limpar Vídeo Original",type:"main",index:0}],[{node:firstLoopNode,type:"main",index:0}]]},
+    "Limpar Vídeo Original":{main:[[{node:"Mover Vídeo Processado",type:"main",index:0}]]},
+    "Mover Vídeo Processado":{main:[[{node:"Listar Arquivos (Verificar Fila)",type:"main",index:0}]]},
+    "Listar Arquivos (Verificar Fila)":{main:[[{node:"Decidir Próximo Vídeo",type:"main",index:0}]]},
+    "Decidir Próximo Vídeo":{main:[[{node:"Disparar Próximo Vídeo",type:"main",index:0}]]}
   };
   if (sub) {
     connections["Extrair Áudio do Clipe"] = {main:[[{node:"Preparar Whisper Clipe",type:"main",index:0}]]};
@@ -1677,7 +972,7 @@ return results;`;
 
 function renderPreview(type){
   updateCfg();
-  const wf = type==='semantic' ? buildSemanticWorkflow() : type==='block' ? buildBlockWorkflow() : buildSimpleWorkflow();
+  const wf = buildBlockWorkflow();
   document.getElementById('preview-label').textContent =
     `📄 preview: workflow-shorts-${type}.json`;
   document.getElementById('json-preview-content').textContent = JSON.stringify(wf,null,2);
@@ -1685,7 +980,7 @@ function renderPreview(type){
 
 function downloadWorkflow(type){
   updateCfg();
-  const wf = type==='semantic' ? buildSemanticWorkflow() : type==='block' ? buildBlockWorkflow() : buildSimpleWorkflow();
+  const wf = buildBlockWorkflow();
   const blob = new Blob([JSON.stringify(wf,null,2)],{type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1702,7 +997,7 @@ function showToast(msg){
 }
 
 updateCfg(); updateRange();
-setTimeout(()=>renderPreview('semantic'),100);
+setTimeout(()=>renderPreview('block'),100);
 </script>
 </body>
 </html>
