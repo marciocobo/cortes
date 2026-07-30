@@ -61,6 +61,27 @@ Para recuperar a execução #15 sem reprocessar o vídeo inteiro (2h+ de whisper
 
 **Fila automática de vídeos — loop sequencial + arquivamento (14/07/2026):** a pedido do usuário ("identifique todos os videos que estão na pasta e roda sequencialmente... quando terminar mover para a pasta Videos-Cortes\Videos"), implementado um mecanismo de self-chaining: ao final de cada execução bem-sucedida, o workflow move o vídeo original processado para `Videos-Cortes/Videos`, relista a pasta de entrada e — se sobrar algum vídeo elegível — dispara automaticamente uma nova execução de si mesmo (assíncrona, `waitForSubWorkflow:false`) para o próximo vídeo, encadeando até a fila esvaziar. Aplicado nos três lugares. Ver seção "Fila automática — loop sequencial + arquivamento de vídeos processados" abaixo para detalhes técnicos, incluindo uma pegadinha de credenciais do MCP do n8n e uma descoberta sobre a organização real das pastas do usuário. **Ainda não testado com uma execução real do loop completo** — a pasta raiz está sem vídeos elegíveis no momento (por escolha do usuário, que preferiu não mover o vídeo do Pr. Daniel dos Santos de volta para a raiz).
 
+**Auditoria de validação + 4 fixes aplicados (29/07/2026):** a pedido do usuário ("valide o processo de gerar cortes e melhore o máximo que você conseguir"), foi feita uma auditoria cruzando os 165 clipes/115 `_meta.json` já gerados na pasta `Videos-Cortes/Cortes`, o histórico de 67 execuções reais (via MCP) e o código do workflow em produção. Confirmado que o teto de 180s, o gap mínimo de 10s, `minBlockScore=40` e o modelo `large-v3-turbo` estão todos ativos e funcionando corretamente em produção. Foram encontrados e corrigidos 4 problemas reais (nenhum crítico, todos com evidência concreta de dados/execuções reais):
+1. **Regex do nome do pregador não cobria "Miss.", "Ap.", "Pb.", "Bispo"** — 17 de 91 clipes elegíveis (19%) ficavam sem o prefixo no campo `reason` (ex: vídeos de Miss. Rejane Rosalina, Miss. Francine Piccinato). Regex ampliada para cobrir esses prefixos.
+2. **"Aplicar Trava" ainda derrubava a execução inteira como `error` em colisão de lock** — mesma classe de problema já corrigida em 20/07 para fila vazia (`Selecionar Vídeo`), mas não replicada aqui. Confirmado com 4 execuções reais de 27/07 (#129, #131, #132, #133) marcadas `error` só por causa disso. Novo node IF "Trava Liberada?" segue o mesmo padrão do "Vídeo Encontrado?": lock ocupado agora retorna sucesso com mensagem em vez de lançar exceção.
+3. **Campo `criteria` do `_meta.json` sempre vinha `null`** — "Ranking dos Blocos" nunca copiava o `criteria` que a própria IA retorna para dentro de `scoredBlocks`. Agora é propagado, facilitando diagnóstico futuro sem precisar puxar a resposta bruta da IA via `get_execution`.
+4. **Prompt de seleção final não avisava a 2ª IA quando o "Ranking dos Blocos" caiu no fallback** — os blocos eram rotulados "Melhores blocos" mas carimbados com notas baixas (ex: "nota: 5/100"), um sinal contraditório que pode ter contribuído para o rendimento de só 1 clipe final na execução #78 (Pr. Marcos Xavier, vs. 5–8 usuais). Dois ajustes: a nota deixa de ser exibida quando o bloco vem do fallback (rótulo "candidato - sem nota confiável" no lugar), e um parágrafo de aviso explícito é injetado no prompt avisando a IA para não se ancorar nisso.
+
+**Drift encontrado entre HTML e produção (29/07/2026):** durante a validação cruzada dos 3 lugares, `n8n-video-silence-cutter.html` estava com uma frase a menos ("LEMBRETE CRÍTICO: nenhum clipe pode ter (end - start) maior que 180 segundos...") no prompt do `Preparar GPT — Seleção Final`, presente em produção e em `workflow-blocos.json` mas nunca retroportada para o HTML. Corrigido junto com os 4 fixes acima — os três lugares foram validados byte-a-byte (harness Node executando o `buildBlockWorkflow()` do HTML e comparando o texto do prompt gerado, em ambos os casos `blockScoringFallback` true/false, contra o `jsCode` de `workflow-blocos.json`) e confirmados idênticos antes de aplicar em produção via MCP + `publish_workflow`.
+
+**Ainda não testado com uma execução real após estes 4 fixes.**
+
+**Auditoria de timing dos cortes com agente "clipador" — bug de corte no meio do raciocínio confirmado como muito mais grave do que a documentação sugeria (29/07/2026):** criado um subagente dedicado (`.claude/agents/clipador.md`) para validar `start`/`end` de cada clipe já gerado contra o vídeo ORIGINAL, usando detecção de silêncio (`ffmpeg silencedetect`) em vez de transcrição (não há whisper local disponível). Rodada uma auditoria completa dos 113 clipes com `_meta.json` disponível (2 sem vídeo original localizável): **apenas 7% (8 clipes) têm início E fim limpos. 45% (51 clipes) foram cortados comprovadamente em cima de fala contínua** (nenhuma pausa detectável nem numa janela ampliada de ±6s, com threshold de ruído calibrado por vídeo — confirmado visualmente com extração de frame em 2 casos). Os outros 48% ficam "suspeitos" (existe uma pausa real próxima, mas não perfeitamente colada ao timestamp, tipicamente 1–6s de folga). Achados que contrariam a expectativa dos fixes de julho:
+- **Início e fim falham em proporção parecida** (30 vs. 39 RUIM em 113) — a documentação atribuía o problema principalmente à extensão do `end` via `silencePrefix`, mas o `start` tem exatamente o mesmo padrão de falha.
+- **Variação enorme por pregador/vídeo** (0% RUIM em alguns vídeos, até 86% RUIM em outros) — sugere que a cadência de fala do pregador específico pesa mais que qualquer parâmetro do pipeline.
+- 0 violações de duração (35–180s) e gap mínimo (10s) — essas regras duras continuam sólidas.
+
+**Causa raiz investigada em profundidade (mesmo dia) — revelou 2 bugs reais, não só uma hipótese de prompt:**
+1. **O `silencePrefix` (extensão do `end` por silêncio) provavelmente nunca funcionou de verdade para boa parte dos vídeos**, pelo mesmo motivo já descoberto na calibração do agente clipador: o threshold hardcoded `-30dB` é sistematicamente mais rigoroso que o piso de ruído real de várias gravações (medido entre -13dB e -25dB em amostras reais, via `volumedetect`). Confirmado batendo a duração real de clipes já cortados (via `ffprobe`) contra `end - start` do `_meta.json`: em 3 amostras reais, a duração bate EXATAMENTE, ou seja, a extensão por silêncio não alterou o corte em nenhuma delas — evidência direta de que o mecanismo está silenciosamente inoperante na maioria dos casos, não só teoricamente arriscado.
+2. **O `start` nunca teve NENHUM mecanismo de correção por silêncio** — só o `end` era estendido; o `start` sempre foi usado exatamente como a IA escolheu, sem nenhuma rede de segurança no código. Isso explica por que o início falha na mesma proporção que o fim.
+
+Ver seção "Correção de timing — threshold dinâmico + snap simétrico de início/fim" abaixo para o fix aplicado.
+
 ---
 
 ## Arquitetura: 3 opções de workflow
@@ -97,7 +118,7 @@ Cada função monta um array `nodes[]` e retorna o JSON do workflow n8n.
 | `cfg.minSilence` | 0.4 | Duração mínima de silêncio detectado (s) |
 | `cfg.margin` | 0.15 | Margem de segurança nos cortes (s) |
 
-**Engine padrão:** `openai` (pré-selecionado na UI). Modelo: `gpt-5.4-mini`. Chave hardcoded no campo `openai-key` do HTML.
+**Engine padrão:** `openai` (pré-selecionado na UI). Modelo: `gpt-5.6-luna` (trocado de `gpt-5.4-mini` em 29/07/2026, a pedido do usuário — aplicado nos três lugares: n8n via MCP, HTML, `workflow-blocos.json`; ainda não testado com uma execução real). Chave hardcoded no campo `openai-key` do HTML.
 
 **VPS (atualizado 06/07/2026):** upgrade para 6 núcleos / 18GB RAM. Mudanças aplicadas no whisper.cpp em função disso:
 - Modelo trocado de `ggml-small.bin` para `ggml-large-v3.bin` (~4-5GB RAM, cabe com folga nos 18GB) — maior precisão de transcrição, o que ajuda também o bug de cortes mid-reasoning (menos erros de reconhecimento = pontos de pausa mais confiáveis no PASSO 0/1).
@@ -260,6 +281,22 @@ Os timestamps estavam corretos (em segundos totais, sem erro de unidade) e razoa
 
 ---
 
+## Filtro de fase — "encerramento do culto" adicionado como 5ª fase excluída (29/07/2026)
+
+**Pedido do usuário:** "não gerar corte do louvor, oferta ou dízimos e encerramento do culto." Louvor e dízimo/oferta já estavam cobertos pelo filtro de 12/07/2026 (ver seção acima) — a lacuna real era **"encerramento do culto"** (oração final, bênção, despedida), uma 5ª fase que nunca tinha sido listada explicitamente nem no `sysAnalise` nem no `sysFinal`.
+
+**Por que isso importa especificamente para este pipeline:** o filtro original foi desenhado pensando nas fases que acontecem **antes** da pregação (abertura → avisos → dízimo/louvor → pregação), com uma heurística explícita no prompt de que "um culto normalmente tem só UM bloco de transição... blocos antes dessa transição quase sempre pertencem às fases excluídas." Isso deixava um ponto cego: nada impedia a IA de tratar os últimos blocos do vídeo (potencialmente já no encerramento) como se fossem automaticamente pregação, só por estarem "depois" da transição inicial.
+
+**Fix aplicado (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`):**
+1. **`sysAnalise`:** novo 5º bullet na REGRA DE EXCLUSÃO OBRIGATÓRIA ("Encerramento do culto: oração final, bênção apostólica, despedida, convite para o próximo culto, avisos de saída — 'vamos declarar', 'que a paz do Senhor esteja convosco', 'boa semana', 'Deus abençoe', chamada final ao altar"). O campo `fase` no JSON de resposta ganhou o valor `"encerramento"` como opção válida. A heurística do "bloco de transição" ganhou um parágrafo espelhado explicando que o culto também termina com um bloco de encerramento, e blocos **depois** desse ponto pertencem à fase excluída — reforçando explicitamente que estar perto do fim do vídeo não significa ser pregação.
+2. **`sysFinal`:** mesma extensão nas duas menções de fases excluídas (frase de abertura do prompt + REGRAS INEGOCIÁVEIS), com a REGRA INEGOCIÁVEL ganhando uma frase explícita: "isso vale mesmo para os últimos pontos de conclusão do PASSO 1, perto do fim do vídeo — não assuma que estão automaticamente na pregação."
+3. **Nenhuma mudança de código necessária** — a salvaguarda determinística em "Ranking dos Blocos" (`scores.map(s => (s.fase && s.fase !== 'pregacao') ? {...s, score:0} : s)`) já força nota 0 para QUALQUER fase diferente de `"pregacao"`, então basta a IA rotular corretamente um bloco como `"encerramento"` (em vez de erroneamente como `"pregacao"`) para a exclusão funcionar — o mesmo padrão já estabelecido para as outras 4 fases.
+4. **Checklist do agente `clipador`** (`.claude/agents/clipador.md`) também atualizado para verificar encerramento explicitamente, com uma dica extra: prestar atenção a clipes cujo `start` fica muito perto da duração total do vídeo original (mais suscetíveis a pegar o encerramento).
+
+**Ainda não testado com uma execução real após este fix.**
+
+---
+
 ## Validação do filtro de fase — execução #25 vs #26 (12/07/2026)
 
 **Contexto:** a pedido do usuário ("usar os vídeos que estão na pasta para fazer a validação"), em vez de esperar um novo vídeo ser enviado, analisei a execução mais recente que já tinha rodado nesta sessão (#25) e disparei uma nova execução (#26) no mesmo vídeo para comparação direta antes/depois do filtro de fase.
@@ -369,29 +406,55 @@ O usuário pediu para desabilitar a legenda queimada nos clipes finais. Antes, c
 
 ---
 
-## Extensão por silêncio — silencePrefix (estado atual)
+## Correção de timing dos cortes — threshold dinâmico + snap simétrico de início/fim (29/07/2026)
 
-O `silencePrefix` estende o `clipEnd` da IA até o fim do próximo silêncio após o ponto de corte:
+**Contexto:** a auditoria do agente clipador (ver seção acima) encontrou 45% dos clipes já gerados com corte comprovadamente em cima de fala contínua. Investigando a causa raiz do `silencePrefix` (mecanismo de extensão do `end` por silêncio, documentado abaixo como "estado atual" até este fix), foram encontrados **2 bugs reais e independentes**, não apenas uma hipótese de prompt/IA:
+
+**Bug 1 — threshold de ruído fixo em `-30dB` incompatível com o piso de ruído real das gravações.** Medido via `volumedetect` em amostras reais: o piso de ruído ambiente varia de -13dB a -25dB dependendo da gravação (mic de igreja, room tone, sistema de som) — sempre acima (mais alto/menos rigoroso) do que -30dB fixo, fazendo o `silencedetect` nunca disparar na prática.
+
+**Bug 2 — `$NF` no awk de parsing pegava o campo errado.** A linha real de saída do ffmpeg vem assim: `silence_end: 752.609229 | silence_duration: 0.485805` — **na mesma linha**. `$NF` (último campo) pega `0.485805` (a duração do silêncio), não `752.609229` (o timestamp que o código precisa). Como durações de silêncio são tipicamente <3s e os timestamps de vídeo ficam na casa das centenas/milhares de segundos, a condição `t>e` (onde `e` é o `OEND` absoluto) praticamente NUNCA era verdadeira — **este bug sozinho já explica por que a extensão parecia nunca funcionar**, independente do threshold. Confirmado batendo a duração real de clipes já cortados (via `ffprobe`) contra `end - start` do `_meta.json`: em 3 amostras reais, a duração bate EXATAMENTE — nenhuma extensão foi aplicada em nenhuma delas, apesar do mecanismo estar "documentado como funcionando" desde antes desta sessão. Esse segundo bug é o mais grave dos dois: mesmo corrigindo só o threshold, o `$NF` errado continuaria bloqueando a extensão na quase totalidade dos casos.
+
+**Descoberta adicional durante a validação local — comportamento de `-ss`/timestamps depende do build do ffmpeg.** Testado localmente (Windows, ffmpeg nightly N-124716) que timestamps de `silencedetect` vêm **relativos ao ponto de seek** por padrão (não absolutos), contrariando o que a documentação antiga descrevia como comportamento do ffmpeg da VPS (Alpine). A flag `-copyts` resolve isso de forma determinística (força timestamps absolutos, preservados do arquivo original) — adicionada nas duas chamadas de `silencedetect`, tornando o comportamento correto e **independente de qual build/versão de ffmpeg está rodando**, em vez de depender de um comportamento implícito não documentado que pode variar.
+
+**3 mudanças implementadas (nos três lugares — n8n via MCP, HTML, `workflow-blocos.json`), validadas localmente end-to-end contra vídeos reais antes de aplicar em produção:**
+
+1. **Threshold de ruído calibrado por vídeo, não mais fixo.** Novo passo em "FFprobe + Extrair Áudio": depois de extrair o áudio mono 16kHz, roda `ffmpeg -af volumedetect` nesse áudio já extraído (rápido, não decodifica o vídeo de novo) e captura `mean_volume`. "Preparar Whisper Blocos" calcula `noiseThreshold = mean_volume - 12dB`, limitado à faixa `[-40, -18]` (nunca mais permissivo que -18dB, nunca mais rigoroso que -40dB), e propaga esse valor por todo o pipeline (`Montar Clipes` → cada item do `Loop Over Items` → "FFmpeg Cortar 9:16") — computado **uma vez por vídeo**, não por clipe.
+2. **`$NF` trocado por busca robusta de campo:** em vez de `t=$NF+0` (pega o último campo, errado), agora `for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0` — encontra o token `silence_end:` e pega o campo logo depois, imune a quantos campos vêm antes/depois na linha (ex: o sufixo `| silence_duration: X` que causava o bug).
+3. **Snap simétrico do início (`ASTART`) — não existia nenhuma correção do `start` antes disso, só o `end` era estendido.** Busca janela de até 15s antes do `clipStart` da IA (`MINSTART = clipStart - 15`, nunca negativo) por um `silence_end` próximo (tolerância de +1s depois do `clipStart` também, para pegar silêncios que terminam bem em cima do ponto escolhido). Usa o candidato **mais próximo** de `clipStart` (não só "o último antes"), com fallback para o `clipStart` original se nada for encontrado na janela — nunca quebra, só deixa de corrigir. `MAXEND` passou a ser calculado a partir do `ASTART` já ajustado (não do `clipStart` original) para nunca permitir que a soma de uma extensão do início + extensão do fim ultrapasse o teto de 180s.
 
 ```bash
+# FFmpeg Cortar 9:16 (produção) — versão corrigida
+NOISE={{ $json.noiseThreshold }}
+OSTART={{ $json.clipStart }}
 OEND={{ $json.clipEnd }}
-MAXEND=$(awk -v s={{ $json.clipStart }} 'BEGIN{printf "%.3f", s+180}')
+MINSTART=$(awk -v s="$OSTART" 'BEGIN{v=s-15; printf "%.3f", (v<0?0:v)}')
+SRAW2=$(ffmpeg -y -copyts -ss "$MINSTART" -t 17 -i "{{ $json.videoPath }}" \
+  -af "silencedetect=noise=${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" \
+  | awk -v s="$OSTART" 'BEGIN{best="";bestdiff=999} {for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; diff=t-s; if(diff<0)diff=-diff; if(t<=s+1 && diff<bestdiff){best=t;bestdiff=diff}} END{if(best!="")print best}')
+ASTART=$(awk -v s="$OSTART" -v r="$SRAW2" -v mn="$MINSTART" \
+  'BEGIN{r=r+0; if(r>0 && r>=mn && r<=s+1) printf "%.3f",r; else printf "%.3f",s}')
+MAXEND=$(awk -v s="$ASTART" 'BEGIN{printf "%.3f", s+180}')
 SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}')
-SRAW=$(ffmpeg -y -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" \
-  -af "silencedetect=noise=-30dB:duration=0.3" -f null - 2>&1 \
-  | grep "silence_end" | awk -v e="$OEND" '{t=$NF+0; if(t>e){print t; exit}}')
+SRAW=$(ffmpeg -y -copyts -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" \
+  -af "silencedetect=noise=${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" \
+  | awk -v e="$OEND" '{for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; if(t>e){print t; exit}}')
 AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" \
-  'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; \
-   else if(e<=m) printf "%.3f",e; else printf "%.3f",m}')
+  'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; else if(e<=m) printf "%.3f",e; else printf "%.3f",m}')
 ```
 
-**Diferença em relação à documentação antiga:** usa `silence_end` (não `silence_start`), janela de 92s (não 45s), `duration=0.3` (não 0.8s), e faz seek 2s antes do OEND para capturar silêncios próximos ao ponto de corte.
+**Validado localmente antes de aplicar em produção:** rodado o comando completo (real, não simulado) contra o vídeo "Os três voos da pomba - Pr. Rodnei Romano.mp4" e o clipe real `familia-na-arca` (start=601.8, end=736.3, um caso RUIM confirmado pela auditoria). Resultado: `ASTART` permaneceu 601.8 (sem silêncio próximo do início — confirmado como um caso genuinamente sem solução algorítmica, precisa de fix de prompt/seleção da IA, não de código) e `AEND` mudou de 736.3 para **755.719** (extensão de ~19.4s até a próxima pausa real, dentro do teto de 180s) — a extensão finalmente funcionou, e a duração do arquivo cortado bateu exatamente com `AEND - ASTART`. Antes do fix do bug do `$NF`, o mesmo teste retornava `AEND = OEND` sem nenhuma mudança (extensão sempre no-op).
 
-**Por que `silence_end`:** encontra o momento em que o silêncio termina e a fala recomeça. Usar `-to $AEND` no FFmpeg faz o clipe terminar exatamente antes da próxima fala, incluindo o silêncio completo após a última palavra. Mais natural do que cortar no início do silêncio.
+**Validado com execução real de produção (30/07/2026) — execução #143, mesmo vídeo de teste (Igreja Mahanaim, Pr. André Ribeiro 26/07) processado pela 3ª vez na mesma sessão, agora com os 5 fixes juntos (threshold dinâmico + awk corrigido + snap simétrico + filtro de encerramento + modelo `gpt-5.6-luna`):** o agente `clipador` validou os 8 clipes desta execução contra o vídeo original. Resultado: **0 OK, 4 SUSPECT, 4 RUIM (50%)** — uma melhora real frente às duas execuções anteriores do mesmo vídeo (pré-fix: 4/6 RUIM = 67%; execução intermediária só com fixes de timing, sem filtro de encerramento: 7/8 RUIM = 87.5%, pior que o baseline porque esse vídeo específico tem uma cama de áudio/música contínua de fundo que eleva o piso de ruído mesmo nas pausas de fala). A taxa de RUIM caiu de 87.5% para 50% com os fixes completos, mas não chegou a zero.
 
-**Por que SRAW é usado diretamente:** o FFmpeg com input seeking (`-ss` antes de `-i`) preserva os PTS absolutos do arquivo original. O `silencedetect` retorna timestamps **absolutos**, não relativos ao seek. Bug histórico: código antigo somava `OEND + SRAW` — sempre ultrapassava MAXEND. Correto: usar `SRAW` diretamente.
+**Achados desta validação:**
+- **0 violações de duração, gap, ou vazamento de fase (incluindo o novo filtro de encerramento)** — essas regras continuam sólidas. Nenhum dos 8 clipes vazou conteúdo de abertura/dízimo/louvor/encerramento, mesmo o clipe mais próximo do fim (79.6% do vídeo, ~28min de sobra) tinha hook/reason claramente ligado à pregação, não a uma despedida.
+- **Calibração de threshold precisou de ajuste manual nesta validação:** a fórmula padrão (`mean_volume - 12dB`) sugeriu ~-28dB para este vídeo, mas -28dB (e o antigo -30dB fixo) continuavam rígidos demais — vários pontos não detectavam silêncio nem em janelas de ±12s. O agente recalibrou manualmente para -20dB (dentro da faixa válida `[-40,-18]`) e conseguiu achar pausas reais que -28dB não via. Isso não invalida o fix (a calibração dinâmica é estritamente melhor que um valor fixo), mas confirma que `mean-12dB` é um ponto de partida razoável, não uma fórmula perfeita — vídeos com cama de áudio contínua podem precisar de mais margem.
+- **Um clipe (o 8º, `filhos-sao-flechas`) não teve nenhuma pausa detectável em NENHUM threshold testado (-30 a -13dB) em nenhum dos dois lados** — confirmado com frames mostrando gestos de mão em movimento e uma criança sendo trazida ao palco, sinal de um momento de "ministração"/apelo emocional intenso onde estruturalmente pode não existir pausa de fala real. Este é exatamente o cenário já documentado como limitação conhecida do fix (ver acima): quando não há pausa real na janela de busca, nenhum ajuste de threshold ou snap de código resolve.
+- **Sinal novo e barato encontrado:** o único clipe com um hook começando por conjunção de continuação ("Porém...") também foi o único com o início confirmado RUIM por áudio — sugere que checar o hook por palavras de continuação antes mesmo de rodar `silencedetect` já seria um proxy grátis para sinalizar candidatos a corte ruim.
 
-**MAXEND = clipStart + 180** — teto absoluto = 3 min (máximo YouTube Shorts).
+**Conclusão prática:** os fixes de código (threshold dinâmico, awk, snap simétrico) parecem ter atingido o teto do que dá para resolver algoritmicamente — a melhora foi real (87.5%→50%) mas o gargalo restante é estrutural: vídeos/trechos sem pausa de fala longa o suficiente não têm onde o código ancorar a correção. O próximo ganho relevante provavelmente exige atacar a escolha do `start`/`end` na própria IA (abordagem #3 do "Bug pendente" — verificação de cada ponto relendo o que vem antes/depois — ou #5, dividir a seleção por janela), não mais ajuste de threshold/parsing.
+
+**Limitação conhecida, não resolvida por este fix:** quando não existe NENHUMA pausa real na janela de busca (nem antes do início, nem depois do fim — os casos "RUIM" mais graves da auditoria, ex: `nenhum silencio (±6s)`), o snap de código não tem o que corrigir — ele so pode alinhar a um silêncio que existe, não criar um do nada. Esses casos exigem um fix na escolha do `start`/`end` pela própria IA (abordagem #3 do "Bug pendente" — verificação de cada ponto pela IA relendo o que vem antes/depois — ou #5, dividir a seleção por janela), ainda não implementado.
 
 ---
 
@@ -463,7 +526,7 @@ Cada chamada de IA usa dois nodes: um Code node ("Preparar X") que monta o objet
 
 ```javascript
 // Code node ("Preparar X") retorna objeto JS nativo:
-return [{ json: { model: 'gpt-5.4-mini', messages: [...] } }];
+return [{ json: { model: 'gpt-5.6-luna', messages: [...] } }];
 
 // HTTP Request node:
 specifyBody: "keypair"
@@ -518,6 +581,13 @@ if (clips.length > 0 && _maxTs > 0 && _maxTs < 120 && _dur > 600) {
 | "Ranking dos Blocos": todos os 18 blocos com nota 5, inclusive 17 marcados `fase:"pregacao"` pela própria IA | IA zerou os 7 critérios e aplicou a nota-teto de exclusão (5) mesmo a blocos que ela classificou como pregação legítima — atalho degenerado em vídeo de fala muito contínua | Prompt `sysAnalise` ganhou regra de consistência numérica (score = soma dos criteria); código de "Ranking dos Blocos" agora força `score=0` para blocos com `fase != "pregacao"` (exclusão determinística, não depende só do prompt) |
 | `_meta.json` nunca aparecia no OneDrive (pasta só tinha `.mp4`) | Node "Upload Metadados → OneDrive" não respeita o parâmetro `fileName` — usa o nome do arquivo LOCAL (sempre `clip_XX_meta.json`, genérico e igual em todo vídeo), sobrescrevendo os mesmos ~8 arquivos desde 08/07 | `metaPath` local em "Montar Clipes" passou a usar o mesmo padrão final do `outPath` (`short_XX_slug_meta.json`), alinhando nome local ao nome desejado — corrige independente do node respeitar ou não o parâmetro `fileName` |
 | Tentativa de baixar `ggml-large-v3-turbo.bin` para `/models/` falhou com `Permission denied` | `/models/` pertence a `root:root`, sem escrita para o usuário `node` (uid 1000) que roda o n8n — modelo antigo foi colocado lá manualmente via acesso root/SSH, fora do fluxo do workflow | Modelo novo baixado via `wget` para `/home/node/.n8n-files/ggml-large-v3-turbo.bin` (pasta já gravável e já usada pelo pipeline) em vez de `/models/`; comando do whisper apontado para o novo caminho |
+| Nome do pregador ausente no `reason`/nome do arquivo para Miss./Ap./Pb./Bispo (só "Pr."/"Pra." funcionava) | Regex em "Montar Clipes" só cobria os prefixos `Pr\.?a?\.?` | Regex ampliada para `(?:Pr\.?a?\.?\|Miss\.?\|Pb\.?\|Ap\.?\|Bispo\.?)` |
+| "Aplicar Trava" marcava a execução inteira como `error` em toda colisão de lock (Schedule Trigger vs. self-chaining) | Mesma classe de bug já corrigida em 20/07 para fila vazia, mas não replicada aqui — `throw new Error(...)` mesmo sendo um resultado esperado/seguro | Lock ocupado agora retorna `{lockAcquired:false, lockMessage}` em vez de lançar erro; novo node IF "Trava Liberada?" decide se segue (true) ou para sem erro (false), mesmo padrão do "Vídeo Encontrado?" |
+| `criteria` do `_meta.json` sempre `null`, mesmo quando `block_score` existia | "Ranking dos Blocos" nunca copiava o `criteria` retornado pela IA para dentro de `scoredBlocks` | `scoredBlocks` agora inclui `criteria: s.criteria \|\| null` |
+| Rendimento de clipes despencava quando o fallback do "Ranking dos Blocos" era acionado (execução #78: 1 clipe em vez de 5-8) | Prompt de seleção final rotulava blocos de baixa nota como "Melhores blocos" com o número anexado (ex: "nota: 5/100") — sinal contraditório que pode ter deixado a 2ª IA mais conservadora | Nota omitida quando `usedFallback` (rótulo "candidato - sem nota confiável"); parágrafo de aviso explícito injetado no `userContent` quando `blockScoringFallback` |
+| Extensão do `end` por silêncio (`silencePrefix`) nunca funcionava de verdade (confirmado: duração real dos clipes = `end-start` do meta, sem nenhuma extensão aplicada) | `awk` usava `$NF` (último campo) para extrair o timestamp de `silence_end`, mas a linha real do ffmpeg é `silence_end: X \| silence_duration: Y` — `$NF` pegava `Y` (duração, tipicamente <3s), quase nunca maior que `OEND` (centenas/milhares de segundos) | `awk` reescrito para localizar o token `silence_end:` e pegar o campo seguinte, imune ao sufixo `\| silence_duration:` |
+| Threshold de silêncio fixo em `-30dB` não detectava pausas reais em ~45% dos clipes auditados | Piso de ruído ambiente varia de -13dB a -25dB entre gravações — acima do threshold fixo, que nunca disparava | `noiseThreshold` calculado por vídeo via `volumedetect` (`mean_volume - 12dB`, faixa `[-40,-18]`), propagado por todo o pipeline até "FFmpeg Cortar 9:16" |
+| `start` do clipe nunca tinha nenhuma correção por silêncio (só o `end` era estendido) | Assimetria de design original — `silencePrefix` só existia para o fim | Novo snap simétrico (`ASTART`): busca o `silence_end` mais próximo numa janela de até 15s antes do `clipStart`, com fallback pro valor original se nada for encontrado |
 
 ---
 
@@ -813,6 +883,10 @@ Vídeo: "Quem é você depois do culto? — 14/06/2026"
 **15/07/2026:** a pedido do usuário ("quando tiver o nome da pessoa incluir nome + descrição que já tem hoje nos shorts"), o node "Montar Clipes" agora extrai o nome do pregador do nome do arquivo de vídeo e prefixa no campo `reason` do `_meta.json` de cada clipe. Ver seção "Nome do pregador na descrição dos shorts" abaixo.
 
 **16/07/2026:** o modelo de transcrição foi trocado de `ggml-large-v3.bin` para `ggml-large-v3-turbo.bin`, agora carregado de `/home/node/.n8n-files/ggml-large-v3-turbo.bin` (não de `/models/`, que não é gravável pelo usuário `node` — ver seção "Troca de modelo whisper.cpp"). Se o modelo precisar ser re-baixado no futuro (ex: nova VPS, volume recriado), a URL é `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin` (~1.51GiB) e o destino deve ser `/home/node/.n8n-files/`, não `/models/`.
+
+**29/07/2026:** 4 fixes aplicados nos três lugares na mesma sessão (n8n via MCP + `update_workflow` + `publish_workflow`, `n8n-video-silence-cutter.html`, `workflow-blocos.json`), depois de uma auditoria de validação sobre os 165 clipes já gerados: (1) regex do pregador ampliada (Miss./Ap./Pb./Bispo, além de Pr./Pra.), (2) "Aplicar Trava" não derruba mais a execução em colisão de lock esperada — novo node "Trava Liberada?", (3) campo `criteria` propagado para o `_meta.json`, (4) aviso explícito + ocultação da nota enganosa no prompt de seleção final quando o "Ranking dos Blocos" cai no fallback. De quebra, corrigido um drift pré-existente: o HTML estava sem uma frase ("LEMBRETE CRÍTICO...") que já existia em produção/`workflow-blocos.json` no prompt do `Preparar GPT — Seleção Final`. **Não é necessário reimportar nada no n8n desta vez** — os fixes já foram aplicados direto em produção via MCP e o workflow já foi republicado (`activeVersionId` novo). Os arquivos locais (HTML/JSON) foram atualizados só para manter os três em sincronia, não para reimportar. **Ainda não testado com uma execução real.**
+
+**29/07/2026 (mesmo dia, sessão de auditoria de timing):** criado o subagente `.claude/agents/clipador.md` (audita `start`/`end` dos shorts já gerados contra o vídeo original via detecção de silêncio) e rodada uma auditoria completa dos 113 clipes com metadados — achado: 45% cortados comprovadamente em fala contínua. Investigação da causa raiz encontrou 2 bugs reais no `silencePrefix`: `$NF` no awk pegava o campo errado (`silence_duration` em vez do timestamp de `silence_end`, já que ambos vêm na mesma linha do ffmpeg separados por `\|`) e o threshold fixo de `-30dB` não batia com o piso de ruído real das gravações (-13 a -25dB). Fix aplicado nos três lugares: threshold calibrado por vídeo (`volumedetect`), `awk` corrigido, e um snap simétrico novo para o `start` (que nunca tinha nenhuma correção por silêncio antes). Validado localmente rodando o comando ffmpeg real contra um clipe já processado — confirmado que a extensão do fim, que nunca disparava antes, agora funciona (estendeu ~19s até uma pausa real). Ver seção "Correção de timing dos cortes — threshold dinâmico + snap simétrico de início/fim" para detalhes técnicos completos. **Não é necessário reimportar nada no n8n** — aplicado direto em produção via MCP + republicado. **Ainda não testado com uma execução real do pipeline (VPS) nem com uma nova rodada do agente clipador para confirmar queda na taxa de RUIM.**
 
 ---
 
