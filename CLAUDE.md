@@ -71,6 +71,8 @@ Para recuperar a execução #15 sem reprocessar o vídeo inteiro (2h+ de whisper
 
 **Ainda não testado com uma execução real após estes 4 fixes.**
 
+**Bug crítico de sobreposição entre clipes corrigido (31/07/2026):** o snap de silêncio por clipe (início/fim ajustados de forma isolada por item do loop) podia consumir todo o gap mínimo entre 2 clipes e gerar sobreposição REAL de conteúdo — confirmado na execução #143 (clip2/clip3 com -2.46s de overlap). Corrigido com um clamp determinístico contra o vizinho + gap mínimo bruto subiu de 10s para 15s + tolerância do snap de início alargada + `real_start`/`real_end` agora persistidos no `_meta.json`. **MCP do n8n estava desconectado nesta sessão — só HTML e `workflow-blocos.json` foram atualizados, produção continua com o bug até reimportar manualmente.** Ver seção "Bug crítico corrigido — snap de silêncio por clipe podia gerar sobreposição" abaixo.
+
 **Auditoria de timing dos cortes com agente "clipador" — bug de corte no meio do raciocínio confirmado como muito mais grave do que a documentação sugeria (29/07/2026):** criado um subagente dedicado (`.claude/agents/clipador.md`) para validar `start`/`end` de cada clipe já gerado contra o vídeo ORIGINAL, usando detecção de silêncio (`ffmpeg silencedetect`) em vez de transcrição (não há whisper local disponível). Rodada uma auditoria completa dos 113 clipes com `_meta.json` disponível (2 sem vídeo original localizável): **apenas 7% (8 clipes) têm início E fim limpos. 45% (51 clipes) foram cortados comprovadamente em cima de fala contínua** (nenhuma pausa detectável nem numa janela ampliada de ±6s, com threshold de ruído calibrado por vídeo — confirmado visualmente com extração de frame em 2 casos). Os outros 48% ficam "suspeitos" (existe uma pausa real próxima, mas não perfeitamente colada ao timestamp, tipicamente 1–6s de folga). Achados que contrariam a expectativa dos fixes de julho:
 - **Início e fim falham em proporção parecida** (30 vs. 39 RUIM em 113) — a documentação atribuía o problema principalmente à extensão do `end` via `silencePrefix`, mas o `start` tem exatamente o mesmo padrão de falha.
 - **Variação enorme por pregador/vídeo** (0% RUIM em alguns vídeos, até 86% RUIM em outros) — sugere que a cadência de fala do pregador específico pesa mais que qualquer parâmetro do pipeline.
@@ -458,6 +460,35 @@ AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" \
 
 ---
 
+## Bug crítico corrigido — snap de silêncio por clipe podia gerar sobreposição de conteúdo entre 2 Shorts (31/07/2026)
+
+**Contexto:** a pedido do usuário ("procure possibilidades de melhorar os cortes... traga todas as possibilidades, mas não faça nenhuma alteração"), foi feita uma investigação de pesquisa (sem aplicar nada) sobre a execução #143 (mesmo vídeo usado na validação de 30/07/2026, Igreja Mahanaim, Pr. André Ribeiro). O agente `clipador` foi melhorado com duas capacidades novas: (1) detectar que `_meta.json` está desatualizado desde 29/07/2026 (guarda só o `start`/`end` bruto escolhido pela IA, nunca os valores REAIS pós-ajuste de silêncio que o FFmpeg efetivamente usa) e recalcular os valores reais localmente antes de validar; (2) checar gap/sobreposição entre clipes CONSECUTIVOS usando esses valores reais recalculados, não os brutos.
+
+**Achado crítico:** recalculando `ASTART`/`AEND` reais dos 8 clipes da execução #143 (reproduzindo exatamente a fórmula de produção, `NOISE=-28.5`) e comparando por `ffprobe` contra os arquivos `.mp4` já cortados (bateu exatamente), o gap real entre clipes consecutivos ficou:
+
+| Par | Gap real (pós-ajuste) |
+|---|---|
+| clip1 → clip2 | 0.0s |
+| clip2 → clip3 | **-2.46s (sobreposição real de conteúdo entre 2 Shorts já publicados)** |
+| clip3 → clip4 | 3.83s |
+
+**Causa raiz:** o snap de início (`ASTART`, adicionado em 29/07/2026) e a extensão de fim (`AEND`) rodam de forma isolada por item do `Loop Over Items` — cada clipe só enxerga o próprio `noiseThreshold`/`clipStart`/`clipEnd`, sem nenhuma noção de onde o vizinho ficou depois do PRÓPRIO ajuste. Antes de 29/07/2026 só o fim era estendido (nunca o início), então esse risco era menor; com os dois lados se movendo um em direção ao outro, colisão passou a ser fisicamente possível mesmo respeitando o gap mínimo bruto de 10s (a extensão pode consumir mais do que o gap bruto oferecia). Esse bug nunca tinha sido percebido porque toda auditoria anterior (inclusive a validação de 30/07/2026) comparava contra o `_meta.json`, cujo `start`/`end` sempre foi o valor BRUTO da IA — nunca refletiu o corte real, e por isso nunca revelou a sobreposição.
+
+**Fixes aplicados nesta sessão (HTML + `workflow-blocos.json`, validados byte-a-byte via harness Node — MCP do n8n estava desconectado, produção NÃO foi tocada, ver aviso abaixo):**
+
+1. **Trava determinística de colisão entre vizinhos** — em "Montar Clipes", cada clipe do array `results` agora carrega `prevClipEnd`/`nextClipStart` (o `clipEnd`/`clipStart` BRUTO do vizinho anterior/seguinte, `null` nas pontas). O bash de "FFmpeg Cortar 9:16" recebe esses dois valores (com sentinelas `-1`/`999999999` para "sem vizinho") e, depois de calcular `ASTART`/`AEND` normalmente, aplica um clamp final com `MINGAP=5`: se o `ASTART` ajustado ficar mais cedo que `prevClipEnd+5`, cai de volta no `OSTART` bruto da IA; se o `AEND` ajustado ultrapassar `nextClipStart-5`, cai de volta no `OEND` bruto. Como o gap mínimo bruto (ver item 2) já garante que `OSTART`/`OEND` sozinhos respeitam essa distância, o fallback nunca fica pior que o comportamento pré-29/07 (sem ajuste nenhum) — só impede que o AJUSTE piore a situação.
+2. **Gap mínimo bruto entre clipes aumentado de 10s para 15s** (código em "Montar Clipes" + as duas menções no prompt `sysFinal`, PASSO 2 regra (d) e REGRAS INEGOCIÁVEIS) — margem de segurança extra para o clamp acima ter espaço de sobra antes de precisar recair no bruto.
+3. **Tolerância do snap de início alargada de `s+1` para `s+3`** (nas duas condições awk, `t<=s+1`→`t<=s+3` e `r<=s+1`→`r<=s+3`) — a mesma auditoria encontrou um caso real (clipe 3 da execução #143) onde o candidato de silêncio mais próximo do `start` ficava a ~2s de distância e não era usado por só 1s de folga a menos.
+4. **`ASTART`/`AEND` reais persistidos no `_meta.json`** como campos novos `real_start`/`real_end` (via `awk` reescrevendo o JSON já gravado em disco, logo após o `printf` original — `sed -i` com inserção multi-linha não é confiável no busybox sed da VPS Alpine). Os campos `start`/`end` originais continuam sendo a escolha BRUTA da IA (não alterados, para não quebrar nada que já leia esses campos) — `real_start`/`real_end` é puramente aditivo. Resolve a lacuna que permitiu o bug de sobreposição passar despercebido: agora qualquer auditoria futura (agente `clipador` ou manual) lê o corte real direto do metadado, sem precisar recalcular a fórmula do zero.
+
+**Validação feita antes de aplicar:** harness Node (`vm.createContext`, mesmo padrão de sessões anteriores) rodando `buildBlockWorkflow()` do HTML real com os defaults de produção (`min-clip=45`, `ai-engine=openai`, `min-block-score=40`) — sintaxe do `Montar Clipes` validada com `new Function()`, comando bash validado com `sh -n`, e a lógica do clamp de colisão + o patch de `real_start`/`real_end` testados isoladamente com `awk` fora do n8n usando números reais da execução #143 (incluindo o cenário exato clip2/clip3 que causou a sobreposição — confirmado que o clamp agora rejeita o ajuste e cai no bruto). `workflow-blocos.json` foi então patchado cirurgicamente (só os 3 nodes tocados: `Montar Clipes`, `FFmpeg Cortar 9:16`, `Preparar GPT — Seleção Final`) e reconferido byte-a-byte contra a saída do harness.
+
+**⚠️ MCP do n8n estava desconectado nesta sessão — produção (`ID4wisnN4Tqpt2zh`) NÃO foi atualizada.** Diferente das sessões anteriores (onde o fix ia direto para produção via `update_workflow`+`publish_workflow`), desta vez só o HTML e o `workflow-blocos.json` foram alterados. **É necessário reimportar `workflow-blocos.json` manualmente no n8n** (ou reconectar o MCP e reaplicar) antes que esses fixes tenham qualquer efeito real — até lá, a execução em produção continua com o bug de sobreposição.
+
+**Ainda não testado com uma execução real** — nem em produção (pendente de reimport/reconexão MCP) nem contra o vídeo #143 (que já foi processado; validar num próximo vídeo novo).
+
+---
+
 ## Prompts de IA — estrutura PASSO 1 / PASSO 2
 
 **Opção 3 (Blocos)** usa dois passes de IA:
@@ -588,6 +619,7 @@ if (clips.length > 0 && _maxTs > 0 && _maxTs < 120 && _dur > 600) {
 | Extensão do `end` por silêncio (`silencePrefix`) nunca funcionava de verdade (confirmado: duração real dos clipes = `end-start` do meta, sem nenhuma extensão aplicada) | `awk` usava `$NF` (último campo) para extrair o timestamp de `silence_end`, mas a linha real do ffmpeg é `silence_end: X \| silence_duration: Y` — `$NF` pegava `Y` (duração, tipicamente <3s), quase nunca maior que `OEND` (centenas/milhares de segundos) | `awk` reescrito para localizar o token `silence_end:` e pegar o campo seguinte, imune ao sufixo `\| silence_duration:` |
 | Threshold de silêncio fixo em `-30dB` não detectava pausas reais em ~45% dos clipes auditados | Piso de ruído ambiente varia de -13dB a -25dB entre gravações — acima do threshold fixo, que nunca disparava | `noiseThreshold` calculado por vídeo via `volumedetect` (`mean_volume - 12dB`, faixa `[-40,-18]`), propagado por todo o pipeline até "FFmpeg Cortar 9:16" |
 | `start` do clipe nunca tinha nenhuma correção por silêncio (só o `end` era estendido) | Assimetria de design original — `silencePrefix` só existia para o fim | Novo snap simétrico (`ASTART`): busca o `silence_end` mais próximo numa janela de até 15s antes do `clipStart`, com fallback pro valor original se nada for encontrado |
+| Snap de silêncio por clipe podia gerar sobreposição real de conteúdo entre 2 Shorts (execução #143: clip2/clip3 com -2.46s de overlap) | `ASTART`/`AEND` de cada clipe são calculados isoladamente por item do loop, sem noção de onde o vizinho ficou após o próprio ajuste — o gap mínimo bruto de 10s podia ser consumido inteiro pela extensão | Clamp determinístico usando `prevClipEnd`/`nextClipStart` (bruto) + `MINGAP=5`, cai de volta no timestamp bruto da IA se o ajuste ultrapassaria o vizinho; gap mínimo bruto subiu de 10s para 15s como margem extra (31/07/2026) |
 
 ---
 

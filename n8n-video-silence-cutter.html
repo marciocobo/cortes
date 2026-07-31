@@ -545,7 +545,7 @@ O campo "fase" deve ser um destes valores: "pregacao" (bloco de ensino/pregaçã
 PASSO 1 — PONTOS DE CONCLUSÃO: Você vai receber um CHECKLIST OBRIGATÓRIO DE COBERTURA no início da mensagem do usuário, com janelas de tempo do vídeo — siga-o à risca, é mais importante que a ordem de leitura natural do texto. Leia TODA a transcrição, do início ao fim, e identifique 15–25 momentos onde o pregador conclui um pensamento completo (responde uma pergunta, fecha uma ilustração, resume um ponto, resolve um argumento). IMPORTANTE: como pregadores costumam falar em arcos longos, procure ATIVAMENTE por pontos de conclusão intermediários dentro de cada raciocínio longo (a cada 40-180s), não só no fechamento final do argumento inteiro — isso garante que sempre exista uma opção de 'end' dentro do teto de 180s no PASSO 2. Os pontos DEVEM estar espalhados por TODA a duração informada, cobrindo CADA janela do checklist com pelo menos 2 pontos — se você notar que todos os seus pontos estão concentrados numa janela pequena do início, PARE, releia o restante da transcrição SRT completa (fornecida no final da mensagem) e adicione pontos das partes posteriores antes de prosseguir. Liste cada um com timestamp (em SEGUNDOS TOTAIS) e resumo de 5 palavras.
 ATENÇÃO: a transcrição NÃO tem pontuação (gerada por whisper.cpp) e JÁ FOI PRÉ-PROCESSADA — um passo anterior mesclou automaticamente pausas de respiração (gap < 0.5s) nos blocos SRT antes deste texto chegar até você. Isso significa que TODA quebra de bloco SRT que você vê aqui já representa uma pausa real de fala (≥0.5s) — você NÃO precisa calcular gaps manualmente, eles já foram filtrados. Mas isso NÃO é suficiente sozinho: uma pausa real também pode acontecer no meio de uma enumeração, antes de uma vírgula falada ou entre uma conjunção — nesses casos a quebra de bloco SRT é uma pausa real, mas NÃO é uma conclusão de pensamento. Use o fim de um bloco SRT como candidato a 'end' SOMENTE quando o conteúdo também fechar o raciocínio. Sinais adicionais de conclusão: (1) palavras-sinal como "então", "portanto", "por isso", "fica aqui", "entende", "lembra disso", "ou seja"; (2) mudança clara de assunto; (3) afirmação com tom definitivo que encerra o argumento. NÃO marque como conclusão o fim de um bloco que esteja no meio de enumeração ou lista, mesmo que a pausa seja real.
 
-PASSO 2 — SELEÇÃO DE CLIPES (de 5 a 8, seja generoso): Para cada clipe: (a) escolha 'start' com gancho forte nos primeiros 3s; (b) o 'end' DEVE ser um dos pontos de conclusão do PASSO 1 que caia ENTRE start+40s E start+180s (nunca antes, nunca depois — 180s é o teto absoluto, sem exceções) — sempre o timestamp de FIM de um bloco SRT (pausa real já garantida pelo pré-processamento); (c) se nenhum ponto de conclusão estiver nessa janela de start+40s a start+180s, avance o 'start' ou escolha outro trecho — NUNCA escolha um 'end' acima de start+180s só para fechar o raciocínio perfeitamente; (d) o 'start' de cada clipe deve ser ao menos 10s DEPOIS do 'end' do clipe anterior — NUNCA contíguo; (e) os clipes finais DEVEM vir de pelo menos 4 janelas diferentes do checklist de cobertura — não concentre todos os clipes nas primeiras janelas do vídeo. Prefira retornar 8 clipes. Lembre: 'start' e 'end' em SEGUNDOS TOTAIS (ex: start=124.1, end=248.5), e (end - start) NUNCA maior que 180.
+PASSO 2 — SELEÇÃO DE CLIPES (de 5 a 8, seja generoso): Para cada clipe: (a) escolha 'start' com gancho forte nos primeiros 3s; (b) o 'end' DEVE ser um dos pontos de conclusão do PASSO 1 que caia ENTRE start+40s E start+180s (nunca antes, nunca depois — 180s é o teto absoluto, sem exceções) — sempre o timestamp de FIM de um bloco SRT (pausa real já garantida pelo pré-processamento); (c) se nenhum ponto de conclusão estiver nessa janela de start+40s a start+180s, avance o 'start' ou escolha outro trecho — NUNCA escolha um 'end' acima de start+180s só para fechar o raciocínio perfeitamente; (d) o 'start' de cada clipe deve ser ao menos 15s DEPOIS do 'end' do clipe anterior — NUNCA contíguo (essa margem extra, além do gap mínimo, dá espaço para o ajuste automático de silêncio no início/fim de cada clipe sem gerar sobreposição de conteúdo entre dois Shorts); (e) os clipes finais DEVEM vir de pelo menos 4 janelas diferentes do checklist de cobertura — não concentre todos os clipes nas primeiras janelas do vídeo. Prefira retornar 8 clipes. Lembre: 'start' e 'end' em SEGUNDOS TOTAIS (ex: start=124.1, end=248.5), e (end - start) NUNCA maior que 180.
 
 REGRAS INEGOCIÁVEIS:
 - NENHUM clipe pode vir de abertura do culto, boas-vindas, avisos/recados, apelo de dízimo e oferta, louvor/música, ou encerramento do culto (oração final, bênção, despedida) — somente da pregação/mensagem principal. Isso vale mesmo para os últimos pontos de conclusão do PASSO 1, perto do fim do vídeo — não assuma que estão automaticamente na pregação. Se um ponto de conclusão do PASSO 1 estiver dentro de um desses trechos, descarte-o e não o use como 'end' nem como 'start'.
@@ -553,7 +553,7 @@ REGRAS INEGOCIÁVEIS:
 - DURAÇÃO DE CADA CLIPE (end - start) NUNCA PODE ULTRAPASSAR 180 SEGUNDOS. Este é um limite técnico rígido (YouTube Shorts + pipeline), não uma sugestão. Um clipe de 181s ou mais será descartado inteiro pelo sistema. Se um raciocínio precisar de mais tempo, escolha um ponto de conclusão intermediário real dentro do teto, em vez de tentar capturar o argumento inteiro.
 - Cortes em pausas de fala, nunca no meio de uma palavra.
 - Clipe autocontido: quem assiste sem contexto entende início, meio e fim.
-- Clipes NÃO se sobrepõem e NÃO são contíguos: 'start' de cada clipe deve ser ≥10s após o 'end' do anterior (gap mínimo obrigatório de 10s).
+- Clipes NÃO se sobrepõem e NÃO são contíguos: 'start' de cada clipe deve ser ≥15s após o 'end' do anterior (gap mínimo obrigatório de 15s — a margem extra existe porque o ajuste automático de silêncio no início/fim de cada clipe pode consumir parte desse intervalo).
 - O CHECKLIST DE COBERTURA de janelas de tempo (fornecido no início da mensagem do usuário) é obrigatório: cada janela precisa de pelo menos 2 pontos de conclusão no PASSO 1, e os clipes finais devem vir de pelo menos 4 janelas diferentes.
 
 Retorne APENAS JSON sem markdown:
@@ -762,7 +762,7 @@ for (let i = 0; i < clips.length; i++) {
   const clip = clips[i];
   const dur = clip.end - clip.start;
   if (dur < ${MIN} - 10 || dur > 180) continue;
-  if (results.length > 0 && clip.start < results[results.length-1].clipEnd + 10) continue;
+  if (results.length > 0 && clip.start < results[results.length-1].clipEnd + 15) continue;
   const idx = String(results.length+1).padStart(2,'0');
   const titleSlug = (clip.title||'clip').toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40);
   const preacherSlug = preacherName ? preacherName.replace(' ', '-') : null;
@@ -784,6 +784,17 @@ for (let i = 0; i < clips.length; i++) {
   const metaContent = JSON.stringify({ index:results.length+1, title:clip.title, slug, hook:clip.hook||'', reason:clipReason, retention_score: clip.retention_score||null, block_score: blockScore ? blockScore.score : null, criteria: blockScore ? blockScore.criteria||null : null, start:clip.start, end:clip.end, duration:Math.floor(ds/60)+'m'+(ds%60)+'s', videoSource:vn }, null, 2);
   results.push({ clipStart:Math.max(0,clip.start), clipEnd:clip.end, idx, titleSlug:slug, hook:clip.hook||'', reason:clip.reason||'', videoPath:vp, videoName:vn, outPath, audioPath${sub ? ', srtBase, srtPath' : ''}, metaPath, metaContent, noiseThreshold });
 }
+// Limites do vizinho (valores BRUTOS, antes do ajuste de silencio) para cada clipe - usados pelo FFmpeg
+// Cortar 9:16 como trava deterministica contra sobreposicao: o snap de inicio e a extensao de fim de cada
+// clipe rodam de forma isolada por item do loop, sem saber onde o vizinho ficou depois do proprio ajuste.
+// Ja foi confirmado em producao (execucao #143) que isso pode fechar o gap a 0s ou ate invertê-lo (overlap
+// real de conteudo entre 2 Shorts publicados). Passar prevClipEnd/nextClipStart aqui permite ao bash do
+// FFmpeg descartar um ajuste que ultrapasse o vizinho, caindo de volta no timestamp bruto da IA (que por
+// construcao do gap minimo acima ja respeita a distancia de seguranca).
+for (let i = 0; i < results.length; i++) {
+  results[i].prevClipEnd = i > 0 ? results[i-1].clipEnd : null;
+  results[i].nextClipStart = i < results.length - 1 ? results[i+1].clipStart : null;
+}
 if (results.length === 0) {
   const debugInfo = clips.map(cl => ({ start: cl.start, end: cl.end, dur: +((cl.end||0) - (cl.start||0)).toFixed(1) }));
   const durs = debugInfo.map(d => d.dur);
@@ -803,9 +814,9 @@ if (results.length === 0) {
   } else if (spanClips > 0 && spanClips < _dur * 0.15) {
     causaProvavel = 'a IA concentrou os pontos de conclusao numa janela pequena (' + spanClips.toFixed(0) + 's de intervalo, video tem ' + _dur + 's) em vez de espalhar por todo o video — ver checklist de cobertura no prompt.';
   } else {
-    causaProvavel = 'gap minimo de 10s entre clipes provavelmente descartou clipes proximos demais uns dos outros, ou combinacao de fatores — ver debugInfo abaixo.';
+    causaProvavel = 'gap minimo de 15s entre clipes provavelmente descartou clipes proximos demais uns dos outros, ou combinacao de fatores — ver debugInfo abaixo.';
   }
-  throw new Error('Nenhum clipe passou nos filtros de duracao (min ' + (${MIN} - 10) + 's, max 180s) ou gap minimo (10s). A IA retornou ' + clips.length + ' clipes brutos: ' + JSON.stringify(debugInfo) + '. Duracao do video: ' + _dur + 's. Causa provavel: ' + causaProvavel);
+  throw new Error('Nenhum clipe passou nos filtros de duracao (min ' + (${MIN} - 10) + 's, max 180s) ou gap minimo (15s). A IA retornou ' + clips.length + ' clipes brutos: ' + JSON.stringify(debugInfo) + '. Duracao do video: ' + _dur + 's. Causa provavel: ' + causaProvavel);
 }
 return results;`;
 
@@ -904,11 +915,27 @@ return results;`;
   const vf_base = `scale=-2:${cfg.height},crop=${cfg.width}:${cfg.height}:(iw-${cfg.width})/2:(ih-${cfg.height})/2`;
   const vf_sub  = `${vf_base},setpts=PTS-STARTPTS,subtitles={{ $json.srtPath }}:force_style='${style}'`;
   const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
-  const silencePrefix = `NOISE={{ $json.noiseThreshold }} && OSTART={{ $json.clipStart }} && OEND={{ $json.clipEnd }} && MINSTART=$(awk -v s="$OSTART" 'BEGIN{v=s-15; printf "%.3f", (v<0?0:v)}') && SRAW2=$(ffmpeg -y -copyts -ss "$MINSTART" -t 17 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v s="$OSTART" 'BEGIN{best="";bestdiff=999} {for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; diff=t-s; if(diff<0)diff=-diff; if(t<=s+1 && diff<bestdiff){best=t;bestdiff=diff}} END{if(best!="")print best}') && ASTART=$(awk -v s="$OSTART" -v r="$SRAW2" -v mn="$MINSTART" 'BEGIN{r=r+0; if(r>0 && r>=mn && r<=s+1) printf "%.3f",r; else printf "%.3f",s}') && MAXEND=$(awk -v s="$ASTART" 'BEGIN{printf "%.3f", s+180}') && SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}') && SRAW=$(ffmpeg -y -copyts -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v e="$OEND" '{for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; if(t>e){print t; exit}}') && AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" 'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; else if(e<=m) printf "%.3f",e; else printf "%.3f",m}') && `;
+  // Tolerancia do snap de inicio alargada de +1s para +3s (t<=s+3 / r<=s+3) — validado na auditoria de
+  // 29/07/2026 que +1s deixava de fora candidatos reais a ~2s de distancia (ex: clipe 3 da execucao #143).
+  // PREVEND/NEXTSTART (bruto, ANTES do ajuste de silencio) + trava MINGAP=5s no final: sem isso, o snap de
+  // inicio e a extensao de fim de cada clipe rodam isolados por item do loop, sem saber onde o vizinho ficou
+  // depois do proprio ajuste — confirmado em producao (execucao #143) que isso pode fechar o gap a 0s ou ate
+  // inverter (overlap real de conteudo entre 2 Shorts publicados: clip2/clip3 com -2.46s de sobreposicao).
+  // Quando o ajuste ultrapassaria o vizinho, cai de volta no timestamp bruto da IA, que por construcao do
+  // gap minimo de 15s em Montar Clipes ja respeita a distancia de seguranca.
+  const silencePrefix = `NOISE={{ $json.noiseThreshold }} && OSTART={{ $json.clipStart }} && OEND={{ $json.clipEnd }} && PREVEND={{ $json.prevClipEnd != null ? $json.prevClipEnd : -1 }} && NEXTSTART={{ $json.nextClipStart != null ? $json.nextClipStart : 999999999 }} && MINGAP=5 && MINSTART=$(awk -v s="$OSTART" 'BEGIN{v=s-15; printf "%.3f", (v<0?0:v)}') && SRAW2=$(ffmpeg -y -copyts -ss "$MINSTART" -t 17 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v s="$OSTART" 'BEGIN{best="";bestdiff=999} {for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; diff=t-s; if(diff<0)diff=-diff; if(t<=s+3 && diff<bestdiff){best=t;bestdiff=diff}} END{if(best!="")print best}') && ASTART=$(awk -v s="$OSTART" -v r="$SRAW2" -v mn="$MINSTART" 'BEGIN{r=r+0; if(r>0 && r>=mn && r<=s+3) printf "%.3f",r; else printf "%.3f",s}') && ASTART=$(awk -v a="$ASTART" -v p="$PREVEND" -v g="$MINGAP" -v s="$OSTART" 'BEGIN{floor=(p<0)?-1:(p+g); if(floor>=0 && a<floor) printf "%.3f", s; else printf "%.3f", a}') && MAXEND=$(awk -v s="$ASTART" 'BEGIN{printf "%.3f", s+180}') && SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}') && SRAW=$(ffmpeg -y -copyts -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v e="$OEND" '{for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; if(t>e){print t; exit}}') && AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" 'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; else if(e<=m) printf "%.3f",e; else printf "%.3f",m}') && AEND=$(awk -v a="$AEND" -v n="$NEXTSTART" -v g="$MINGAP" -v e="$OEND" 'BEGIN{ceil=(n>=999999999)?-1:(n-g); if(ceil>=0 && a>ceil) printf "%.3f", e; else printf "%.3f", a}') && `;
   const ffBase = `-y -ss "$ASTART" -to "$AEND" -i "{{ $json.videoPath }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
+  // Persiste os limites REAIS (pos-ajuste de silencio) de volta no _meta.json, como campos novos
+  // (real_start/real_end), sem alterar start/end (que continuam sendo a escolha bruta da IA, para nao
+  // quebrar nada que ja leia esses campos). Resolve a lacuna encontrada na auditoria de 29/07/2026: o
+  // corte real (o que o FFmpeg de fato usa) nunca era gravado em lugar nenhum, so existia implicitamente
+  // no arquivo .mp4 final — auditorias futuras (agente clipador ou manual) tinham que recalcular tudo do
+  // zero toda vez. Usa awk em vez de sed -i porque a VPS (Alpine) so tem busybox sed, sem suporte
+  // confiavel a insercao de multiplas linhas via s///.
+  const metaPatch = `META=$(cat "{{ $json.metaPath }}") && printf '%s' "$META" | awk -v rs="$ASTART" -v re="$AEND" 'NR==1{print; print "  \\"real_start\\": " rs ","; print "  \\"real_end\\": " re ","; next}1' > "{{ $json.metaPath }}"`;
   const cutCmd = sub
-    ? `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && (test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}")`
-    : `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`;
+    ? `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && ${metaPatch} && (test -f "{{ $json.srtPath }}" && ffmpeg ${ffBase} -vf "${vf_sub}" "{{ $json.outPath }}" || ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}")`
+    : `=${silencePrefix}printf '%s' '{{ $json.metaContent }}' > "{{ $json.metaPath }}" && ${metaPatch} && ffmpeg ${ffBase} -vf "${vf_base}" "{{ $json.outPath }}"`;
 
   nodes.push(
     {id:"b18",name:cutNodeName,type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[3260,440],
