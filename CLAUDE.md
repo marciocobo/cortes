@@ -84,6 +84,8 @@ Para recuperar a execução #15 sem reprocessar o vídeo inteiro (2h+ de whisper
 
 Ver seção "Correção de timing — threshold dinâmico + snap simétrico de início/fim" abaixo para o fix aplicado.
 
+**Auditoria completa de melhorias — performance, integração e qualidade (17/08/2026):** a pedido do usuário ("traga melhorias... tudo precisa passar pelo clipador para validar"), levantamento completo do pipeline com a parte de qualidade validada por dados reais do agente `clipador` em 24 clipes de 4 execuções (03–12/08/2026). Resultado agregado: 45.8% OK / 45.8% SUSPEITO / 8.3% RUIM, **zero overlap real entre clipes** (confirma que o fix de 31/07 funcionou), mas com uma lacuna residual identificada no clamp de colisão (compara só contra o valor bruto do vizinho, não o ajustado — 1 caso real ficou com gap de 4.74s, abaixo do piso de segurança de 5s). Também levantados: falta de `retryOnFail` nas 2 chamadas de IA e nas chamadas Graph API/FFmpeg, chave da OpenAI hardcoded em texto puro em vez de credential, ausência de `errorWorkflow`/notificação de conclusão. Ver seção "Auditoria completa de melhorias" abaixo para a lista completa. **Nada foi aplicado ainda — é só o levantamento, aguardando priorização do usuário.**
+
 ---
 
 ## Arquitetura: 3 opções de workflow
@@ -486,6 +488,45 @@ AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" \
 **⚠️ Atualização (31/07/2026, mesmo dia, sessão seguinte): MCP do n8n reconectado — fix aplicado em produção.** Comparado `get_workflow_details` de `ID4wisnN4Tqpt2zh` byte-a-byte contra `workflow-blocos.json` nos 3 nodes tocados (`Montar Clipes`, `FFmpeg Cortar 9:16`, `Preparar GPT — Seleção Final`) — a diferença encontrada foi exatamente a esperada (gap 10s→15s, clamp de colisão com `prevClipEnd`/`nextClipStart`, tolerância `s+1`→`s+3`, persistência de `real_start`/`real_end`), sem nenhum outro drift. Aplicado via `update_workflow` (`updateNodeParameters` nos 3 nodes, atômico) + `publish_workflow` (`activeVersionId` novo: `bfdecd11-bc5a-421d-b526-15b881044b0d`). Reconferido pós-publish: os 3 nodes em produção batem 100% com `workflow-blocos.json`.
 
 **Ainda não testado com uma execução real** — o fix está em produção e publicado, mas falta uma execução de ponta a ponta com um vídeo novo para confirmar que o clamp de colisão realmente elimina a sobreposição (o vídeo #143 já foi processado; validar no próximo vídeo da fila).
+
+**✅ Validado com 4 execuções reais pós-fix (17/08/2026) — ver seção "Auditoria de melhorias" abaixo:** o agente `clipador` confirmou **zero overlaps reais** em 20 pares de clipes consecutivos across as execuções #163, #177, #194 e #203 (03–12/08/2026). Porém identificou uma lacuna residual no design do clamp: como cada lado só compara contra o valor **BRUTO** do vizinho (não o valor já ajustado dele), os dois lados podem se mover um em direção ao outro simultaneamente e ainda assim passar despercebidos pelo clamp — 3 de 20 pares ficaram abaixo do gap mínimo pretendido de 15s, incluindo 1 caso real (Pr. Hiro Delgado, clip4→clip5) que rompeu até o piso de segurança de 5s do próprio clamp, com gap real de **4.74s**. Não é overlap (ainda positivo), mas é a evidência de que o clamp elimina o cenário que o motivou (overlap franco) sem fechar 100% a lacuna matemática. Fix ainda não aplicado — ver detalhes e sugestão na seção de auditoria.
+
+---
+
+## Auditoria completa de melhorias — performance, integração e qualidade (17/08/2026)
+
+**Pedido do usuário:** levantar todas as possibilidades de melhoria do pipeline (performance, integração, qualidade), com a parte de qualidade obrigatoriamente validada pelo agente `clipador` contra dados reais, não suposição. Nenhuma mudança foi aplicada nesta sessão — é um levantamento para priorização futura.
+
+**Qualidade — auditoria do `clipador` em 24 clipes reais (execuções #163, #177, #194, #203 — as 4 execuções completas rodadas em produção entre 03/08 e 12/08/2026, todas já com o fix de clamp de colisão de 31/07/2026):**
+
+- **Resultado agregado: 45.8% OK / 45.8% SUSPEITO / 8.3% RUIM (2 de 24)** — melhora grande frente ao histórico (45–50% RUIM nas auditorias de 29–30/07, pré/parcial-fix). **Overlap real entre clipes: 0 casos confirmados.**
+- **Achado metodológico do próprio clipador:** o piso de ruído varia ~7dB *dentro do mesmo vídeo* (não só entre vídeos) — uma calibração de 1 amostra por vídeo (o que o código de produção faz hoje em "FFprobe + Extrair Áudio"/"Preparar Whisper Blocos") pode ficar imprecisa em trechos localmente mais ruidosos ou mais silenciosos. Isso vale tanto para a extensão de silêncio real do FFmpeg quanto para futuras auditorias.
+- **Clamp de colisão (Q1, detalhado na seção acima):** usa o valor bruto do vizinho, não o ajustado — permite erosão combinada dos dois lados. Sugestão: comparar contra o valor já ajustado do vizinho, ou processar os clipes em sequência dentro do loop em vez de isoladamente por item.
+- **Hook com conjunção de continuação é sinal barato e não-redundante ao silencedetect:** 2 de 24 clipes têm `hook` começando com "Então"/"Mas" (`jesus-e-o-amor` e `a-historia-nao-acabou`), ambos com áudio de início tecnicamente limpo mas conteúdo sugerindo meio de frase. Sugestão: checagem programática simples (regex nas primeiras palavras do `hook`) no `Montar Clipes`, gravada no meta como sinal de alerta adicional.
+- **`block_score`/`criteria` são por bloco (~3min), não por clipe:** clipes diferentes fatiados do mesmo bloco herdam nota e critérios idênticos (confirmado: execução #203, 6 de 8 clipes com `criteria` byte-idêntico), e 4 de 24 clipes ficaram com `block_score: null` (clipe final não caiu dentro de nenhum bloco do `topBlocksSummary`) — não correlacionou com pior timing, mas limita diagnóstico por clipe individual.
+- **`retention_score` sem poder discriminante:** todos os 24 clipes da amostra ficaram entre 84–96 (nenhum abaixo de 84) — como só clipes escolhidos são pontuados pela 2ª IA, a métrica hoje não ajuda a priorizar qual short postar primeiro.
+- **Padrão forte por vídeo/pregador, não só por pregador:** Pr. Hiro Delgado ("Deus Não Deixa Inacabado") teve 87.5% dos clipes com algum desvio de timing, contra 20–33% nos outros 3 vídeos. O mesmo pregador (Pr. Daniel dos Santos) variou de 33% a 60% entre 2 vídeos diferentes — confirma que a cadência específica do sermão/dia pesa mais que o pregador como categoria fixa.
+- **Positivo confirmado:** zero violação de duração/gap bruto, zero vazamento de fase (abertura/dízimo/louvor/encerramento) nos 24 clipes, e a regra de consistência numérica do scoring (bug histórico de "tudo nota 5", ver seção "Bug corrigido — IA zerava criteria") não reapareceu em nenhuma das 4 execuções.
+
+**Performance/confiabilidade — achados via `get_workflow_details` no workflow de produção:**
+
+- `GPT — Analisar Blocos` e `GPT — Seleção Final` **sem `retryOnFail`** — um timeout/5xx transitório da API derruba a execução inteira depois de já ter pago horas de whisper.cpp. Diferente de "Baixar Vídeo"/"Upload Short/Metadados" (que já têm retry desde 08/07), essas 2 chamadas de IA nunca ganharam o mesmo tratamento.
+- Chamadas Graph API (`Resolver Pasta`, `Resolver Pasta Saída`, `Listar Arquivos`, `Mover Vídeo Processado`, `Listar Arquivos Verificar Fila`) **sem `retryOnFail`** — mesmo já existindo precedente documentado de 504 transitório do OneDrive (08/07/2026).
+- `FFmpeg Cortar 9:16` **sem `retryOnFail`**.
+- Nenhum node do `Loop Over Items` tem `onError: continueRegularOutput` — comportamento padrão do n8n aborta a execução inteira se 1 clipe falhar (ex: ffmpeg, upload), perdendo os clipes seguintes que cortariam normalmente.
+- Workflow sem `executionTimeout` explícito (usa o default da instância) — risco invisível para execuções de 4h+ já observadas na prática.
+- `Resolver Pasta Saída` roda em toda execução (inclusive nas ~4x/dia com fila vazia via "A Cada 6 Horas"), buscando um ID de pasta praticamente estático — round-trip evitável.
+
+**Integração:**
+
+- **Chave da API OpenAI hardcoded em texto puro** nos nodes `GPT — Analisar Blocos` e `GPT — Seleção Final` (campo `headerParameters`), em vez de usar uma credential do n8n — fica exposta em exports/histórico de versões do workflow, e rotação exige editar 2 nodes manualmente. Sugestão: migrar para credential `HTTP Header Auth` ou a credential nativa OpenAI do n8n.
+- Nenhum `errorWorkflow` configurado (`setWorkflowSettings`) — os vários incidentes reais já documentados neste arquivo (crash de memória, timeouts, lock colidindo) só foram descobertos por investigação manual, às vezes dias depois.
+- Nenhuma notificação de conclusão — única forma de saber que shorts novos existem é abrir o OneDrive manualmente, apesar do pipeline rodar 100% autônomo hoje (fila + agendamento de 6h).
+- (Ideia de escopo maior, não solicitada) nenhuma integração de publicação direta no YouTube — o fluxo para no OneDrive.
+
+**Positivo confirmado nesta auditoria:** zero execuções com status `error`/`crashed` desde 31/07/2026 (60+ execuções agendadas de fila vazia + as 4 execuções reais de vídeo) — os fixes de trava, memória e wget seguem estáveis em produção.
+
+**Nada foi implementado nesta sessão** — este é só o levantamento, para o usuário priorizar o que aplicar.
 
 ---
 
