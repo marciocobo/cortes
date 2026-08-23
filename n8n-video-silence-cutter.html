@@ -311,9 +311,9 @@ Leia TODA a transcrição antes de decidir.
       <div class="field-hint">Necessário se o motor for "Claude".</div>
     </div>
     <div class="field" id="openai-key-field">
-      <label>OpenAI API Key (GPT-4o)</label>
-      <input type="password" id="openai-key" value="" placeholder="sk-proj-..." oninput="updateCfg()">
-      <div class="field-hint">Necessário se o motor for "GPT-4o". 2 chamadas por vídeo. Transcrição e corte continuam locais — sem custo de API adicional.</div>
+      <label>OpenAI API Key (GPT-4o) — não usado no JSON gerado</label>
+      <input type="password" id="openai-key" value="" placeholder="não é mais necessário aqui" oninput="updateCfg()" disabled>
+      <div class="field-hint">Desde a migração para credential (harden-block-pipeline-reliability), a chave não é mais embutida no workflow gerado. Crie uma credential "HTTP Header Auth" no n8n (nome do header: Authorization, valor: Bearer &lt;sua chave&gt;) e associe aos nodes "GPT — Analisar Blocos"/"GPT — Seleção Final" após importar/publicar. 2 chamadas de IA por vídeo. Transcrição e corte continuam locais — sem custo de API adicional.</div>
     </div>
     <div class="field">
       <label>Pasta de entrada (OneDrive)</label>
@@ -604,18 +604,28 @@ Retorne APENAS JSON sem markdown:
     const prepNode = {id:prepId,name:prepName,type:"n8n-nodes-base.code",typeVersion:2,position:prepPos,
       parameters:{jsCode}};
 
+    // OpenAI usa a credential nativa do n8n (predefinedCredentialType/openAiApi) em vez de header literal
+    // — a chave nunca fica em texto puro no JSON do workflow (exports, historico de versoes). Mesmo padrao
+    // ja usado pelos nodes do OneDrive neste workflow (predefinedCredentialType/microsoftOneDriveOAuth2Api).
+    // Claude/Gemini continuam com header/URL literais (nao estao em uso hoje — so a Opcao 3 com engine
+    // openai roda em producao, ver CLAUDE.md).
     const headers = engine==='claude'
       ? [{name:"x-api-key",value:cfg.anthropicKey},{name:"anthropic-version",value:"2023-06-01"}]
-      : engine==='openai'
-      ? [{name:"Authorization",value:`Bearer ${cfg.openaiKey}`}]
       : [];
 
     const url = engine==='claude' ? "https://api.anthropic.com/v1/messages"
               : engine==='openai' ? "https://api.openai.com/v1/chat/completions"
               : `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${cfg.geminiKey}`;
 
+    const authParams = engine==='openai'
+      ? {authentication:"predefinedCredentialType",nodeCredentialType:"openAiApi"}
+      : {};
+
+    // retryOnFail: uma chamada de IA falhando (timeout/5xx transitorio) nao deve descartar horas de
+    // whisper.cpp ja concluido — mesmo padrao ja usado em Baixar Video/Upload Short/Upload Metadados.
     const httpNode = {id,name,type:"n8n-nodes-base.httpRequest",typeVersion:4,position:pos,
-      parameters:{method:"POST",url,sendHeaders:true,
+      retryOnFail:true,maxTries:5,waitBetweenTries:5000,
+      parameters:{method:"POST",url,sendHeaders:headers.length>0,...authParams,
         headerParameters:{parameters:headers},
         sendBody:true,bodyContentType:"json",
         specifyBody:"keypair",
@@ -708,15 +718,28 @@ if (qualified.length === 0) {
   // sistematicamente pessimista demais para sermoes de fala muito continua/repetitiva - mas isso nao
   // significa que nao ha NENHUM recorte aproveitavel no video inteiro.
   const pregacaoBlocks = scores.filter(s => s.fase === 'pregacao');
+  usedFallback = true;
   if (pregacaoBlocks.length === 0) {
+    // Nao aborta mais aqui (throw removido em 22/08/2026 - ver CLAUDE.md "Bug encontrado - bloco gigante +
+    // exclusao categorica de fase descarta pregacao real"). Blocos muito longos (fala continua sem pausas
+    // >=0.5s) podem misturar pregacao real com trechos de dizimo/louvor/encerramento nas bordas - a
+    // classificacao e por bloco INTEIRO, entao um bloco de 20min com 15min de pregacao real pode ser
+    // descartado so por causa de 5min de dizimo/louvor numa das pontas (confirmado com texto real na
+    // execucao #246: blocos 5 e 7 continham pregacao completa e substancial, mas foram classificados
+    // dizimo_oferta/louvor pela borda). Como a 2a IA sempre recebe a transcricao SRT completa (nao so o
+    // resumo dos blocos), ela ainda pode encontrar e selecionar esses trechos - travar aqui so porque a
+    // triagem grosseira de blocos falhou joga fora essa chance. Se realmente nao houver nada aproveitavel,
+    // o proprio "Montar Clipes" ja tem um throw com diagnostico especifico quando a 2a IA nao retorna
+    // clipes validos.
     const faseCounts = {};
     scores.forEach(s => { const f = s.fase || 'desconhecida'; faseCounts[f] = (faseCounts[f]||0) + 1; });
     const faseBreakdown = Object.entries(faseCounts).map(([f,n]) => f+':'+n).join(', ');
-    throw new Error('Nenhum bloco foi classificado como fase=pregacao pela IA - o video inteiro (ou a parte transcrita) pode ser abertura/avisos/dizimo/louvor, ou a IA classificou incorretamente. Distribuicao de fases: ' + faseBreakdown + '. Notas: ' + scores.map(s=>s.blockIndex+':'+s.score+'('+(s.fase||'?')+')').join(', '));
+    fallbackReason = 'Nenhum bloco foi classificado como fase=pregacao pela IA (distribuicao: ' + faseBreakdown + '). Blocos muito longos (fala continua sem pausas) podem misturar pregacao real com trechos de dizimo/louvor/avisos/encerramento nas bordas, fazendo a classificacao por bloco inteiro descartar conteudo real por engano. Prosseguindo mesmo assim: a 2a IA recebe a transcricao SRT completa e pode encontrar pregacao que esta triagem grosseira de blocos nao capturou.';
+    qualified = [];
+  } else {
+    fallbackReason = 'Nenhum bloco atingiu a nota minima de ' + MIN_SCORE + ' (maior nota entre os ' + pregacaoBlocks.length + ' blocos de pregacao: ' + Math.max(...pregacaoBlocks.map(s=>s.score)) + '). Prosseguindo mesmo assim com os blocos de pregacao disponiveis como guia - a selecao fina fica a cargo da 2a IA, que le a transcricao completa.';
+    qualified = pregacaoBlocks;
   }
-  usedFallback = true;
-  fallbackReason = 'Nenhum bloco atingiu a nota minima de ' + MIN_SCORE + ' (maior nota entre os ' + pregacaoBlocks.length + ' blocos de pregacao: ' + Math.max(...pregacaoBlocks.map(s=>s.score)) + '). Prosseguindo mesmo assim com os blocos de pregacao disponiveis como guia - a selecao fina fica a cargo da 2a IA, que le a transcricao completa.';
-  qualified = pregacaoBlocks;
 }
 
 const allBlocks = JSON.parse($('Dividir em Blocos').first().json.blocks || '[]');
@@ -832,10 +855,13 @@ return results;`;
     {id:"b0a",name:"A Cada 6 Horas",type:"n8n-nodes-base.scheduleTrigger",typeVersion:1.2,position:[80,180],
      parameters:{rule:{interval:[{field:"hours",hoursInterval:6}]}}},
     {id:"b0b",name:"Resolver Pasta",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[220,300],
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
      parameters:{method:"GET",url:"https://graph.microsoft.com/v1.0/me/drive/root:/"+cfg.onedriveFolder,authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
     {id:"b0c",name:"Resolver Pasta Saída",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[380,300],
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
      parameters:{method:"GET",url:"https://graph.microsoft.com/v1.0/me/drive/root:/"+cfg.outputFolder,authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
     {id:"b1",name:"Listar Arquivos",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[560,300],
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
      parameters:{method:"GET",url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $('Resolver Pasta').first().json.id }}/children",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
     {id:"b1b",name:"Selecionar Vídeo",type:"n8n-nodes-base.code",typeVersion:2,position:[540,300],
      parameters:{jsCode:"const allVideos = ($json.value || []).filter(f => /\\.(mp4|mkv|webm|mov|avi)$/i.test(f.name));\nconst MIN_SIZE = 1024 * 1024; // 1MB - abaixo disso, quase certamente ainda sincronizando com o OneDrive\n\n// Nao encontrar video (fila vazia) ou encontrar so videos ainda sincronizando NAO sao erros de verdade -\n// sao estados esperados, especialmente com o Schedule Trigger rodando a cada 6h mesmo sem nada novo na fila.\n// Por isso retornamos um item normal com videoFound:false + mensagem, em vez de lancar throw new Error(...)\n// (que marcava a execucao inteira como \"error\" no historico do n8n). O node \"Video Encontrado?\" logo depois\n// decide se segue o pipeline (true) ou para por ali (false), sem gerar nenhum erro.\nif (allVideos.length === 0) {\n  return [{ json: { videoFound: false, message: 'Nenhum video encontrado na pasta Videos-Cortes no momento - fila vazia, nada a processar.' } }];\n}\n\nconst ready = allVideos.filter(f => (f.size || 0) > MIN_SIZE);\nif (ready.length === 0) {\n  const pending = allVideos.map(f => f.name + ' (' + (f.size || 0) + ' bytes)').join(', ');\n  return [{ json: { videoFound: false, message: 'O(s) video(s) encontrado(s) na pasta ainda parece(m) estar sincronizando com o OneDrive (tamanho 0 ou muito pequeno): ' + pending + '. O desktop client do OneDrive pode levar minutos (ou mais, para arquivos grandes de culto ao vivo) para terminar o upload. Aguarde a sincronizacao completar e rode o workflow novamente (ou aguarde a proxima checagem agendada).' } }];\n}\n\nreturn [{ json: { videoFound: true, ...ready[0] } }];\n"}},
@@ -878,20 +904,33 @@ return results;`;
   // Quando o "Ranking dos Blocos" caiu no fallback (nenhum bloco atingiu a nota minima), avisa a 2a IA
   // explicitamente para nao se ancorar nisso - sem este aviso, a 2a IA tende a ser mais conservadora na
   // selecao final mesmo tendo acesso a transcricao completa (ver CLAUDE.md, execucao #78 Pr. Marcos Xavier).
+  // Desde 22/08/2026, o fallback tambem cobre o caso de ZERO blocos pregacao (antes travava com throw em
+  // "Ranking dos Blocos") - topBlocksSummary vem vazio nesse caso, entao o aviso precisa de um texto
+  // proprio explicando que a triagem por bloco inteiro pode ter descartado pregacao real misturada com
+  // trechos de dizimo/louvor nas bordas de blocos muito longos (ver CLAUDE.md "Bug encontrado - bloco
+  // gigante + exclusao categorica de fase descarta pregacao real").
+  const hasTopBlocks = !!($json.topBlocksSummary && $json.topBlocksSummary.trim());
   const fallbackNotice = $json.blockScoringFallback
-    ? '\\n\\nAVISO: a triagem de blocos não encontrou nenhum trecho com nota alta o suficiente (comum em pregadores de fala contínua/pouco pausada — não significa conteúdo fraco). Os "melhores blocos" logo abaixo são apenas os candidatos disponíveis, SEM nota confiável de qualidade — ignore qualquer número associado a eles. Baseie-se na sua própria leitura da transcrição completa para achar de 5 a 8 bons momentos, com o mesmo padrão de exigência de sempre (gancho forte, emoção, ritmo etc). Não seja mais conservador só porque a triagem anterior não encontrou destaques claros.'
+    ? (hasTopBlocks
+        ? '\\n\\nAVISO: a triagem de blocos não encontrou nenhum trecho com nota alta o suficiente (comum em pregadores de fala contínua/pouco pausada — não significa conteúdo fraco). Os "melhores blocos" logo abaixo são apenas os candidatos disponíveis, SEM nota confiável de qualidade — ignore qualquer número associado a eles. Baseie-se na sua própria leitura da transcrição completa para achar de 5 a 8 bons momentos, com o mesmo padrão de exigência de sempre (gancho forte, emoção, ritmo etc). Não seja mais conservador só porque a triagem anterior não encontrou destaques claros.'
+        : '\\n\\nAVISO CRÍTICO: a triagem inicial não pré-aprovou NENHUM bloco — todos foram classificados como abertura/avisos/dízimo/louvor/encerramento pela IA da 1ª etapa. Isso NÃO significa que o vídeo não tem pregação utilizável: blocos muito longos (quando o pregador fala quase sem pausas) podem misturar pregação real com trechos de dízimo/louvor/oração nas bordas, e a triagem classifica o bloco INTEIRO de uma vez — pregação genuína pode ter sido descartada só por estar ao lado de um apelo de dízimo ou de um louvor final. Ignore completamente o resultado da triagem anterior e baseie-se inteiramente na sua própria leitura da transcrição SRT completa (fornecida abaixo) para encontrar de 5 a 8 bons momentos de pregação real, aplicando os 7 critérios e as REGRAS INEGOCIÁVEIS de fase normalmente — preste atenção especial a trechos longos e contínuos que possam ter pregação embutida entre dízimo/louvor/oração.')
     : '';
-  return 'DURAÇÃO TOTAL DO VÍDEO: ' + _dur + ' segundos (aproximadamente ' + Math.round(_dur/60) + ' minutos).' + fallbackNotice + '\\n\\nCHECKLIST OBRIGATÓRIO DE COBERTURA: o vídeo foi dividido em ' + N_BUCKETS + ' janelas de tempo iguais. Antes de finalizar o PASSO 1, você DEVE ter pelo menos 2 pontos de conclusão em CADA uma das janelas abaixo. Se alguma janela estiver vazia, volte e releia essa parte da transcrição SRT completa (fornecida no final desta mensagem) antes de responder — isso não é opcional:\\n' + bucketList + '\\nOs clipes finais do PASSO 2 também devem vir de pelo menos 4 janelas diferentes — não concentre todos os clipes nas primeiras janelas. LEMBRETE CRÍTICO: nenhum clipe pode ter (end - start) maior que 180 segundos — se o raciocínio do pregador for mais longo que isso, escolha um ponto de conclusão intermediário real, nunca ultrapasse o teto.\\n\\nMelhores blocos (com timestamps):\\n\\n' + $json.topBlocksSummary + '\\n\\nSRT completo (para timestamps precisos):\\n' + $json.srtContent;
+  const blocksSection = hasTopBlocks
+    ? '\\n\\nMelhores blocos (com timestamps):\\n\\n' + $json.topBlocksSummary
+    : '';
+  return 'DURAÇÃO TOTAL DO VÍDEO: ' + _dur + ' segundos (aproximadamente ' + Math.round(_dur/60) + ' minutos).' + fallbackNotice + '\\n\\nCHECKLIST OBRIGATÓRIO DE COBERTURA: o vídeo foi dividido em ' + N_BUCKETS + ' janelas de tempo iguais. Antes de finalizar o PASSO 1, você DEVE ter pelo menos 2 pontos de conclusão em CADA uma das janelas abaixo. Se alguma janela estiver vazia, volte e releia essa parte da transcrição SRT completa (fornecida no final desta mensagem) antes de responder — isso não é opcional:\\n' + bucketList + '\\nOs clipes finais do PASSO 2 também devem vir de pelo menos 4 janelas diferentes — não concentre todos os clipes nas primeiras janelas. LEMBRETE CRÍTICO: nenhum clipe pode ter (end - start) maior que 180 segundos — se o raciocínio do pregador for mais longo que isso, escolha um ponto de conclusão intermediário real, nunca ultrapasse o teto.' + blocksSection + '\\n\\nSRT completo (para timestamps precisos):\\n' + $json.srtContent;
 })()`),
     {id:"b12",name:"Montar Clipes",type:"n8n-nodes-base.code",typeVersion:2,position:[2140,300],
      parameters:{jsCode:montarClipesCode}},
     {id:"b13",name:"Loop Over Items",type:"n8n-nodes-base.splitInBatches",typeVersion:3,position:[2320,300],
      parameters:{batchSize:1,options:{}}},
     {id:"b26",name:"Limpar Vídeo Original",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[700,160],
-     parameters:{command:`=rm -f "{{ $('Preparar Caminhos').first().json.videoPath }}" "{{ $('Preparar Caminhos').first().json.audioPath }}" "{{ $('Preparar Whisper Blocos').first().json.srtPath }}" /home/node/.n8n-files/.processing.lock`}},
+     parameters:{command:`=rm -f "{{ $('Preparar Caminhos').first().json.videoPath }}" "{{ $('Preparar Caminhos').first().json.audioPath }}" "{{ $('Preparar Whisper Blocos').first().json.srtPath }}" /home/node/.n8n-files/.processing.lock /home/node/.n8n-files/.prev_clip_real_end`}},
     {id:"b27",name:"Mover Vídeo Processado",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[880,160],
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
      parameters:{method:"PATCH",url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $('Selecionar Vídeo').first().json.id }}",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",sendBody:true,specifyBody:"keypair",bodyParameters:{parameters:[{name:"parentReference",value:`={{ { path: '/drive/root:/${cfg.onedriveFolder}/Videos' } }}`}]},options:{}}},
     {id:"b28",name:"Listar Arquivos (Verificar Fila)",type:"n8n-nodes-base.httpRequest",typeVersion:4.2,position:[1060,160],
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
      parameters:{url:"=https://graph.microsoft.com/v1.0/me/drive/items/{{ $('Resolver Pasta').first().json.id }}/children",authentication:"predefinedCredentialType",nodeCredentialType:"microsoftOneDriveOAuth2Api",options:{}}},
     {id:"b29",name:"Decidir Próximo Vídeo",type:"n8n-nodes-base.code",typeVersion:2,position:[1240,160],
      parameters:{jsCode:"const allVideos = ($json.value || []).filter(f => /\\.(mp4|mkv|webm|mov|avi)$/i.test(f.name));\nconst MIN_SIZE = 1024 * 1024;\nconst ready = allVideos.filter(f => (f.size || 0) > MIN_SIZE);\nif (ready.length === 0) {\n  return [];\n}\nreturn [{ json: { nextVideoCount: ready.length, nextVideoName: ready[0].name } }];\n"}},
@@ -902,12 +941,16 @@ return results;`;
   if (sub) {
     nodes.push(
       {id:"b14",name:"Extrair Áudio do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2540,440],
+       onError:"continueRegularOutput",
        parameters:{command:`=ffmpeg -y -ss "{{ $json.clipStart }}" -i "{{ $json.videoPath }}" -t "{{ $json.clipEnd - $json.clipStart }}" -vn -acodec pcm_s16le -ar 16000 -ac 1 "{{ $json.audioPath }}"`}},
       {id:"b15",name:"Preparar Whisper Clipe",type:"n8n-nodes-base.code",typeVersion:2,position:[2720,440],
+       onError:"continueRegularOutput",
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
       {id:"b16",name:"Whisper.cpp Transcrever Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2900,440],
+       onError:"continueRegularOutput",
        parameters:{command:`=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np${wordFlags} && tr 'a-zàáâãéêíóôõúç' 'A-ZÀÁÂÃÉÊÍÓÔÕÚÇ' < "{{ $json.srtPath }}" > "{{ $json.srtPath }}.tmp" && mv "{{ $json.srtPath }}.tmp" "{{ $json.srtPath }}"`}},
       {id:"b17",name:"Preparar Corte Final",type:"n8n-nodes-base.code",typeVersion:2,position:[3080,440],
+       onError:"continueRegularOutput",
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}}
     );
   }
@@ -917,13 +960,18 @@ return results;`;
   const cutNodeName = sub ? "FFmpeg Cortar 9:16 + Legenda" : "FFmpeg Cortar 9:16";
   // Tolerancia do snap de inicio alargada de +1s para +3s (t<=s+3 / r<=s+3) — validado na auditoria de
   // 29/07/2026 que +1s deixava de fora candidatos reais a ~2s de distancia (ex: clipe 3 da execucao #143).
-  // PREVEND/NEXTSTART (bruto, ANTES do ajuste de silencio) + trava MINGAP=5s no final: sem isso, o snap de
-  // inicio e a extensao de fim de cada clipe rodam isolados por item do loop, sem saber onde o vizinho ficou
-  // depois do proprio ajuste — confirmado em producao (execucao #143) que isso pode fechar o gap a 0s ou ate
-  // inverter (overlap real de conteudo entre 2 Shorts publicados: clip2/clip3 com -2.46s de sobreposicao).
-  // Quando o ajuste ultrapassaria o vizinho, cai de volta no timestamp bruto da IA, que por construcao do
-  // gap minimo de 15s em Montar Clipes ja respeita a distancia de seguranca.
-  const silencePrefix = `NOISE={{ $json.noiseThreshold }} && OSTART={{ $json.clipStart }} && OEND={{ $json.clipEnd }} && PREVEND={{ $json.prevClipEnd != null ? $json.prevClipEnd : -1 }} && NEXTSTART={{ $json.nextClipStart != null ? $json.nextClipStart : 999999999 }} && MINGAP=5 && MINSTART=$(awk -v s="$OSTART" 'BEGIN{v=s-15; printf "%.3f", (v<0?0:v)}') && SRAW2=$(ffmpeg -y -copyts -ss "$MINSTART" -t 17 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v s="$OSTART" 'BEGIN{best="";bestdiff=999} {for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; diff=t-s; if(diff<0)diff=-diff; if(t<=s+3 && diff<bestdiff){best=t;bestdiff=diff}} END{if(best!="")print best}') && ASTART=$(awk -v s="$OSTART" -v r="$SRAW2" -v mn="$MINSTART" 'BEGIN{r=r+0; if(r>0 && r>=mn && r<=s+3) printf "%.3f",r; else printf "%.3f",s}') && ASTART=$(awk -v a="$ASTART" -v p="$PREVEND" -v g="$MINGAP" -v s="$OSTART" 'BEGIN{floor=(p<0)?-1:(p+g); if(floor>=0 && a<floor) printf "%.3f", s; else printf "%.3f", a}') && MAXEND=$(awk -v s="$ASTART" 'BEGIN{printf "%.3f", s+180}') && SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}') && SRAW=$(ffmpeg -y -copyts -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v e="$OEND" '{for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; if(t>e){print t; exit}}') && AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" 'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; else if(e<=m) printf "%.3f",e; else printf "%.3f",m}') && AEND=$(awk -v a="$AEND" -v n="$NEXTSTART" -v g="$MINGAP" -v e="$OEND" 'BEGIN{ceil=(n>=999999999)?-1:(n-g); if(ceil>=0 && a>ceil) printf "%.3f", e; else printf "%.3f", a}') && `;
+  // PREVEND/NEXTSTART + trava MINGAP=5s no final: sem isso, o snap de inicio e a extensao de fim de cada
+  // clipe rodam isolados por item do loop, sem saber onde o vizinho ficou depois do proprio ajuste —
+  // confirmado em producao (execucao #143) que isso pode fechar o gap a 0s ou ate inverter (overlap real
+  // de conteudo entre 2 Shorts publicados: clip2/clip3 com -2.46s de sobreposicao).
+  // harden-block-pipeline-reliability (clip-boundary-safety): o clamp de PREVEND comparava so contra o
+  // clipEnd BRUTO do vizinho anterior, nunca contra o AEND (real_end) ja ajustado dele — como Loop Over
+  // Items processa 1 clipe por vez, sequencialmente, o AEND do clipe anterior ja e conhecido quando este
+  // clipe roda. PREVSTATE persiste esse AEND real entre iteracoes (arquivo simples, sobrescrito a cada
+  // clipe); se existir e este clipe tiver um vizinho anterior nesta execucao (PREVEND_RAW != -1), usa o
+  // valor real; senao cai no bruto precomputado em Montar Clipes (mesmo comportamento de antes). O sentido
+  // NEXTSTART (vizinho seguinte) continua bruto — o ajuste dele ainda nao aconteceu quando este clipe roda.
+  const silencePrefix = `NOISE={{ $json.noiseThreshold }} && OSTART={{ $json.clipStart }} && OEND={{ $json.clipEnd }} && PREVEND_RAW={{ $json.prevClipEnd != null ? $json.prevClipEnd : -1 }} && PREVSTATE=/home/node/.n8n-files/.prev_clip_real_end && if [ "$PREVEND_RAW" != "-1" ] && [ -s "$PREVSTATE" ]; then PREVEND=$(cat "$PREVSTATE"); else PREVEND=$PREVEND_RAW; fi && NEXTSTART={{ $json.nextClipStart != null ? $json.nextClipStart : 999999999 }} && MINGAP=5 && MINSTART=$(awk -v s="$OSTART" 'BEGIN{v=s-15; printf "%.3f", (v<0?0:v)}') && SRAW2=$(ffmpeg -y -copyts -ss "$MINSTART" -t 17 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v s="$OSTART" 'BEGIN{best="";bestdiff=999} {for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; diff=t-s; if(diff<0)diff=-diff; if(t<=s+3 && diff<bestdiff){best=t;bestdiff=diff}} END{if(best!="")print best}') && ASTART=$(awk -v s="$OSTART" -v r="$SRAW2" -v mn="$MINSTART" 'BEGIN{r=r+0; if(r>0 && r>=mn && r<=s+3) printf "%.3f",r; else printf "%.3f",s}') && ASTART=$(awk -v a="$ASTART" -v p="$PREVEND" -v g="$MINGAP" -v s="$OSTART" 'BEGIN{floor=(p<0)?-1:(p+g); if(floor>=0 && a<floor) printf "%.3f", s; else printf "%.3f", a}') && MAXEND=$(awk -v s="$ASTART" 'BEGIN{printf "%.3f", s+180}') && SEEK=$(awk -v e="$OEND" 'BEGIN{printf "%.3f", e-2}') && SRAW=$(ffmpeg -y -copyts -ss "$SEEK" -t 92 -i "{{ $json.videoPath }}" -af "silencedetect=noise=\${NOISE}dB:duration=0.3" -f null - 2>&1 | grep "silence_end" | awk -v e="$OEND" '{for(i=1;i<=NF;i++) if($i=="silence_end:") t=$(i+1)+0; if(t>e){print t; exit}}') && AEND=$(awk -v e="$OEND" -v r="$SRAW" -v m="$MAXEND" 'BEGIN{r=r+0; if(r>e && r<=m) printf "%.3f",r; else if(e<=m) printf "%.3f",e; else printf "%.3f",m}') && AEND=$(awk -v a="$AEND" -v n="$NEXTSTART" -v g="$MINGAP" -v e="$OEND" 'BEGIN{ceil=(n>=999999999)?-1:(n-g); if(ceil>=0 && a>ceil) printf "%.3f", e; else printf "%.3f", a}') && printf '%s' "$AEND" > /home/node/.n8n-files/.prev_clip_real_end && `;
   const ffBase = `-y -ss "$ASTART" -to "$AEND" -i "{{ $json.videoPath }}" -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k -movflags +faststart`;
   // Persiste os limites REAIS (pos-ajuste de silencio) de volta no _meta.json, como campos novos
   // (real_start/real_end), sem alterar start/end (que continuam sendo a escolha bruta da IA, para nao
@@ -939,22 +987,28 @@ return results;`;
 
   nodes.push(
     {id:"b18",name:cutNodeName,type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[3260,440],
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,onError:"continueRegularOutput",
      parameters:{command:cutCmd}},
     {id:"b19",name:"Preparar Leitura",type:"n8n-nodes-base.code",typeVersion:2,position:[3440,440],
+     onError:"continueRegularOutput",
      parameters:{jsCode:"const clip = $('Loop Over Items').item.json;\nreturn [{ json: { outPath: clip.outPath, metaPath: clip.metaPath, idx: clip.idx, titleSlug: clip.titleSlug, videoName: clip.videoName }}];\n"}},
     {id:"b20",name:"Ler Short do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[3620,440],
+     onError:"continueRegularOutput",
      parameters:{filePath:"={{ $json.outPath }}",dataPropertyName:"data"}},
     {id:"b21",name:"Upload Short → OneDrive",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[3800,440],
-     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,onError:"continueRegularOutput",
      parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura').item.json.idx + '_' + $('Preparar Leitura').item.json.titleSlug + '.mp4' }}",parentId:"={{ $('Resolver Pasta Saída').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
     {id:"b22",name:"Preparar Leitura Meta",type:"n8n-nodes-base.code",typeVersion:2,position:[3980,440],
+     onError:"continueRegularOutput",
      parameters:{jsCode:"const clip = $('Loop Over Items').item.json;\nreturn [{ json: { metaPath: clip.metaPath, idx: clip.idx, titleSlug: clip.titleSlug, videoName: clip.videoName }}];\n"}},
     {id:"b23",name:"Ler Metadados do Disco",type:"n8n-nodes-base.readBinaryFile",typeVersion:1,position:[4160,440],
+     onError:"continueRegularOutput",
      parameters:{filePath:"={{ $json.metaPath }}",dataPropertyName:"data"}},
     {id:"b24",name:"Upload Metadados → OneDrive",type:"n8n-nodes-base.microsoftOneDrive",typeVersion:1,position:[4340,440],
-     retryOnFail:true,maxTries:5,waitBetweenTries:5000,
+     retryOnFail:true,maxTries:5,waitBetweenTries:5000,onError:"continueRegularOutput",
      parameters:{resource:"file",operation:"upload",fileName:"={{ 'short_' + $('Preparar Leitura Meta').item.json.idx + '_' + $('Preparar Leitura Meta').item.json.titleSlug + '_meta.json' }}",parentId:"={{ $('Resolver Pasta Saída').first().json.id }}",binaryData:true,binaryPropertyName:"data"}},
     {id:"b25",name:"Limpar Arquivos do Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[4520,440],
+     onError:"continueRegularOutput",
      parameters:{command:`=rm -f "{{ $('Loop Over Items').item.json.outPath }}" "{{ $('Loop Over Items').item.json.metaPath }}"${sub ? ` "{{ $('Loop Over Items').item.json.audioPath }}" "{{ $('Loop Over Items').item.json.srtPath }}"` : ''}`}}
   );
 
