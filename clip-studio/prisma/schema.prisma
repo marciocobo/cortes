@@ -1,0 +1,64 @@
+// Prisma schema for Clip Studio.
+// See openspec/changes/add-clip-studio-app/design.md - Decisions - Data model & ORM
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CLIPADOR
+  UPLOADER
+  ADMIN
+}
+
+enum SubmissionStatus {
+  FILA
+  BAIXANDO
+  PROCESSANDO
+  CONCLUIDO
+  ERRO
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submissions Submission[]
+}
+
+model Submission {
+  id             String           @id @default(cuid())
+  youtubeUrl     String
+  title          String
+  status         SubmissionStatus @default(FILA)
+  errorReason    String?
+  uploadedFileName String?
+  submittedById  String
+  submittedBy    User             @relation(fields: [submittedById], references: [id])
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([status, createdAt])
+  @@index([submittedById])
+}
+
+// Single-row key/value config table (n8n webhook URL + secret, download stuck-threshold, etc).
+// See design.md - Decisions - Data model & ORM.
+model AppConfig {
+  id                     Int      @id @default(1)
+  n8nIngestWebhookUrl    String?
+  n8nWebhookSharedSecret String?
+  stuckThresholdHours    Int      @default(8)
+  updatedAt              DateTime @updatedAt
+}

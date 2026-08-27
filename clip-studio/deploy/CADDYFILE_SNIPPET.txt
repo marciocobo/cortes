@@ -1,0 +1,17 @@
+# Add this block to /root/n8n/Caddyfile on the VPS (same file that already
+# routes n8n.mcobo.com.br, nutrivion.mcobo.com.br, garantia.mcobo.com.br -
+# see VPS.md §10), then reload Caddy:
+#
+#   docker exec n8n-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+#
+# (or `docker compose restart caddy` from /root/n8n, whichever matches how
+# the existing routes there are normally reloaded).
+#
+# This requires SSH access to the VPS - not something this session can
+# apply directly. clipstudio-web-1 only needs to be reachable BY NAME on
+# the shared n8n_default network (already handled by docker-compose.yml
+# joining that network) - no published port on the host is needed.
+
+clipstudio.mcobo.com.br {
+	reverse_proxy clipstudio-web-1:3000
+}
