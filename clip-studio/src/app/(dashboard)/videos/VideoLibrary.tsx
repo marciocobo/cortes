@@ -531,6 +531,8 @@ function CutModal({
 }) {
   const duration = clip.durationSeconds ?? 0;
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const draggingRef = useRef<"start" | "end" | null>(null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(duration);
   const [currentTime, setCurrentTime] = useState(0);
@@ -554,6 +556,35 @@ function CutModal({
   function handleTrimEndChange(value: number) {
     setTrimEnd(Math.max(value, effectiveStart + 1 > duration ? duration : effectiveStart + 1));
     saveDraft(clip.itemId);
+  }
+
+  // Both trim handles live on the same track (see its JSX below) instead
+  // of two separate <input type="range"> elements. Pointer capture on the
+  // handle itself means pointermove/pointerup keep firing on it even once
+  // the cursor drags outside the track's bounds, so we don't need
+  // window-level listeners.
+  function timeFromPointerX(clientX: number): number {
+    const track = trackRef.current;
+    if (!track || duration <= 0) return 0;
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return ratio * duration;
+  }
+
+  function handleHandlePointerDown(which: "start" | "end", e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    draggingRef.current = which;
+  }
+
+  function handleHandlePointerMove(which: "start" | "end", e: React.PointerEvent<HTMLDivElement>) {
+    if (draggingRef.current !== which) return;
+    const time = Math.round(timeFromPointerX(e.clientX));
+    if (which === "start") handleTrimStartChange(time);
+    else handleTrimEndChange(time);
+  }
+
+  function handleHandlePointerUp() {
+    draggingRef.current = null;
   }
 
   function handleCancel() {
@@ -703,6 +734,7 @@ function CutModal({
           <span>Selecionado: {formatTime(effectiveEnd - effectiveStart)}</span>
         </div>
         <div
+          ref={trackRef}
           style={{
             position: "relative",
             height: 8,
@@ -732,35 +764,70 @@ function CutModal({
               background: "#fcfcfc",
             }}
           />
+          {/* Start/end are dragged directly on this one track instead of
+              two separate <input type="range"> sliders - a handle on each
+              edge of the selected (blue) region. Pointer capture keeps
+              move/up events routed to the handle that started the drag
+              even once the cursor leaves the track bounds. */}
+          <div
+            role="slider"
+            aria-label="Início do corte"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={effectiveStart}
+            onPointerDown={(e) => handleHandlePointerDown("start", e)}
+            onPointerMove={(e) => handleHandlePointerMove("start", e)}
+            onPointerUp={handleHandlePointerUp}
+            style={{
+              position: "absolute",
+              left: `${fillStart}%`,
+              top: "50%",
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: "#6199f6",
+              border: "2px solid #fcfcfc",
+              transform: "translate(-50%, -50%)",
+              cursor: "grab",
+              touchAction: "none",
+            }}
+          />
+          <div
+            role="slider"
+            aria-label="Fim do corte"
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={effectiveEnd}
+            onPointerDown={(e) => handleHandlePointerDown("end", e)}
+            onPointerMove={(e) => handleHandlePointerMove("end", e)}
+            onPointerUp={handleHandlePointerUp}
+            style={{
+              position: "absolute",
+              left: `${fillStart + fillWidth}%`,
+              top: "50%",
+              width: 16,
+              height: 16,
+              borderRadius: "50%",
+              background: "#6199f6",
+              border: "2px solid #fcfcfc",
+              transform: "translate(-50%, -50%)",
+              cursor: "grab",
+              touchAction: "none",
+            }}
+          />
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
-            Início — {formatTime(effectiveStart)}
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={duration}
-            step={1}
-            value={effectiveStart}
-            onChange={(e) => handleTrimStartChange(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
-          <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
-            Fim — {formatTime(effectiveEnd)}
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={duration}
-            step={1}
-            value={effectiveEnd}
-            onChange={(e) => handleTrimEndChange(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontSize: 12,
+            color: "var(--text-dim)",
+            marginBottom: 20,
+          }}
+        >
+          <span>Início — {formatTime(effectiveStart)}</span>
+          <span>Fim — {formatTime(effectiveEnd)}</span>
         </div>
 
         {error && (
