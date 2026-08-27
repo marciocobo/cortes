@@ -90,6 +90,7 @@ export default function VideoLibrary() {
   const [deletingClip, setDeletingClip] = useState<ClipSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cuttingClip, setCuttingClip] = useState<ClipSummary | null>(null);
+  const [openingCutId, setOpeningCutId] = useState<string | null>(null);
 
   async function load() {
     setError(null);
@@ -101,6 +102,32 @@ export default function VideoLibrary() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar vídeos");
       setClips([]);
+    }
+  }
+
+  // A clip's real duration can shrink after a trim done elsewhere (another
+  // tab, another session) without this page ever reloading - CutModal's
+  // sliders are bounded by whatever `durationSeconds` this component has in
+  // memory, so a stale value lets the user pick a range the actual file on
+  // OneDrive no longer has, and "Salvar corte" fails server-side with a
+  // confusing error. Refetch right before opening the modal so the bounds
+  // always match the real file. Falls back to the in-memory clip (not an
+  // empty list) on a transient network error - n8n still validates the
+  // range against the real file either way, so this is a best-effort
+  // freshness check, not the only safety net.
+  async function handleOpenCut(clip: ClipSummary) {
+    setOpeningCutId(clip.itemId);
+    try {
+      const res = await fetch("/api/clips");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Falha ao carregar vídeos");
+      const fresh: ClipSummary[] = data.clips;
+      setClips(fresh);
+      setCuttingClip(fresh.find((c) => c.itemId === clip.itemId) ?? clip);
+    } catch {
+      setCuttingClip(clip);
+    } finally {
+      setOpeningCutId(null);
     }
   }
 
@@ -201,11 +228,15 @@ export default function VideoLibrary() {
                 )}
                 <button
                   className="btn-secondary"
-                  onClick={() => setCuttingClip(clip)}
-                  disabled={busyId === clip.itemId || clip.durationSeconds == null}
+                  onClick={() => handleOpenCut(clip)}
+                  disabled={
+                    busyId === clip.itemId ||
+                    openingCutId === clip.itemId ||
+                    clip.durationSeconds == null
+                  }
                   title={clip.durationSeconds == null ? "Duração do clipe desconhecida" : undefined}
                 >
-                  Cortar
+                  {openingCutId === clip.itemId ? "Abrindo..." : "Cortar"}
                 </button>
                 <button
                   className="btn-secondary"
