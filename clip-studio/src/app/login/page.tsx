@@ -16,7 +16,16 @@ export default async function LoginPage() {
         padding: 24,
       }}
     >
-      <div className="card" style={{ width: "100%", maxWidth: 380, padding: 32 }}>
+      <div
+        className="card"
+        style={{
+          width: "100%",
+          maxWidth: 400,
+          padding: "40px 32px",
+          border: "1px solid #4f4f80",
+          boxShadow: "0 24px 48px rgba(0,0,0,0.5)",
+        }}
+      >
         <p className="eyebrow">Clip Studio</p>
         <h1 style={{ margin: "0 0 24px", fontSize: "1.6rem" }}>Entrar</h1>
         <LoginForm />

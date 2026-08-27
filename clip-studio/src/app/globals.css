@@ -1,10 +1,10 @@
 :root {
-  --bg: #0b0b0d;
-  --panel: #131316;
-  --border: #2a2a2f;
+  --bg: #0a0a13;
+  --panel: #08080c;
+  --border: #2a2a32;
   --text: #f2f2f3;
-  --text-dim: #9a9aa2;
-  --accent-blue: #6d94ff;
+  --text-dim: #a3a3b3;
+  --accent-blue: #6199f6;
   --accent: #ffffff;
   --accent-fg: #0b0b0d;
   --danger: #ef4444;
@@ -23,7 +23,10 @@ html,
 body {
   padding: 0;
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 20% -10%, rgba(79, 79, 128, 0.28), transparent 60%),
+    radial-gradient(circle at 100% 0%, rgba(97, 153, 246, 0.1), transparent 50%),
+    var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
 }
@@ -40,7 +43,7 @@ button {
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .field label {
@@ -180,7 +183,7 @@ button {
 .video-card .thumb-wrap {
   position: relative;
   aspect-ratio: 16 / 9;
-  background: #1a1a1e;
+  background: linear-gradient(135deg, #181826, #0c1d32);
 }
 
 .video-card .thumb {
@@ -203,24 +206,28 @@ button {
 
 .video-card .duration-badge {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  background: rgba(0, 0, 0, 0.75);
+  right: 6px;
+  bottom: 6px;
+  background: rgba(0, 0, 0, 0.8);
   color: #fff;
   font-size: 0.75rem;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .video-card .body {
-  padding: 10px 12px;
+  padding: 14px 16px;
 }
 
 .video-card .name {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.9rem;
   margin: 0 0 4px;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .video-card .meta {
@@ -280,12 +287,22 @@ button {
 }
 
 /* Prototype's video-card action buttons are full pills, not the default
-   4px-radius .btn-secondary/.btn-danger used elsewhere in the app. */
+   4px-radius .btn-secondary/.btn-danger used elsewhere in the app. The
+   prototype also never treats the card-level "Excluir" trigger as a
+   destructive/red action - it's styled identically to Cortar/Renomear;
+   only the confirmation inside DeleteConfirmModal carries the danger
+   color. */
 .video-card .actions .btn-secondary,
 .video-card .actions .btn-danger {
   border-radius: 999px;
   padding: 6px 14px;
   font-size: 0.75rem;
+}
+
+.video-card .actions .btn-danger {
+  background: transparent;
+  color: var(--text-dim);
+  border-color: var(--border);
 }
 
 table {

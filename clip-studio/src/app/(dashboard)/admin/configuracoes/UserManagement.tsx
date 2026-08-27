@@ -120,7 +120,11 @@ export default function UserManagement() {
                   </td>
                   <td data-label="Status">{u.active ? "Ativo" : "Desativado"}</td>
                   <td data-label="">
-                    <button className="btn-secondary" onClick={() => toggleActive(u)}>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => toggleActive(u)}
+                      style={{ borderRadius: 999, padding: "6px 14px" }}
+                    >
                       {u.active ? "Desativar" : "Reativar"}
                     </button>
                   </td>
@@ -154,7 +158,12 @@ export default function UserManagement() {
             <option value="UPLOADER">Uploader</option>
             <option value="ADMIN">Admin</option>
           </select>
-          <button className="btn-secondary" type="submit" disabled={busy}>
+          <button
+            className="btn-primary"
+            type="submit"
+            disabled={busy}
+            style={{ width: "auto", padding: "10px 20px" }}
+          >
             Adicionar
           </button>
         </form>

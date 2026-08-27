@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { ClipSummary } from "@/lib/n8n-client";
 
 function formatDuration(seconds: number | null) {
@@ -85,8 +86,8 @@ function VideoGridSkeleton() {
 export default function VideoLibrary() {
   const [clips, setClips] = useState<ClipSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [renamingClip, setRenamingClip] = useState<ClipSummary | null>(null);
+  const [deletingClip, setDeletingClip] = useState<ClipSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cuttingClip, setCuttingClip] = useState<ClipSummary | null>(null);
 
@@ -122,7 +123,7 @@ export default function VideoLibrary() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setRenamingId(null);
+      setRenamingClip(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao renomear");
@@ -141,7 +142,7 @@ export default function VideoLibrary() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setConfirmDeleteId(null);
+      setDeletingClip(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao excluir");
@@ -171,25 +172,15 @@ export default function VideoLibrary() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={clip.thumbnailUrl} alt="" className="thumb" />
               ) : (
-                <div className="thumb" />
+                <svg className="play-icon" viewBox="0 0 24 24" fill="white">
+                  <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.5)" />
+                  <path d="M10 8l6 4-6 4V8z" />
+                </svg>
               )}
-              <svg className="play-icon" viewBox="0 0 24 24" fill="white">
-                <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.5)" />
-                <path d="M10 8l6 4-6 4V8z" />
-              </svg>
               <span className="duration-badge">{formatDuration(clip.durationSeconds)}</span>
             </div>
             <div className="body">
-              {renamingId === clip.itemId ? (
-                <RenameInline
-                  initialValue={clip.name}
-                  busy={busyId === clip.itemId}
-                  onCancel={() => setRenamingId(null)}
-                  onSave={(name) => handleRename(clip.itemId, name)}
-                />
-              ) : (
-                <p className="name">{clip.hook || clip.name}</p>
-              )}
+              <p className="name">{clip.hook || clip.name}</p>
               <p className="meta">
                 {[formatSize(clip.sizeBytes), formatDate(clip.modifiedAt)].filter(Boolean).join(" · ")}
               </p>
@@ -218,33 +209,18 @@ export default function VideoLibrary() {
                 </button>
                 <button
                   className="btn-secondary"
-                  onClick={() => setRenamingId(clip.itemId)}
+                  onClick={() => setRenamingClip(clip)}
                   disabled={busyId === clip.itemId}
                 >
                   Renomear
                 </button>
-                {confirmDeleteId === clip.itemId ? (
-                  <>
-                    <button
-                      className="btn-danger"
-                      onClick={() => handleDelete(clip.itemId)}
-                      disabled={busyId === clip.itemId}
-                    >
-                      Confirmar exclusão
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => setConfirmDeleteId(null)}
-                      disabled={busyId === clip.itemId}
-                    >
-                      Cancelar
-                    </button>
-                  </>
-                ) : (
-                  <button className="btn-danger" onClick={() => setConfirmDeleteId(clip.itemId)}>
-                    Excluir
-                  </button>
-                )}
+                <button
+                  className="btn-danger"
+                  onClick={() => setDeletingClip(clip)}
+                  disabled={busyId === clip.itemId}
+                >
+                  Excluir
+                </button>
               </div>
             </div>
           </div>
@@ -258,6 +234,22 @@ export default function VideoLibrary() {
             setCuttingClip(null);
             await load();
           }}
+        />
+      )}
+      {renamingClip && (
+        <RenameModal
+          clip={renamingClip}
+          busy={busyId === renamingClip.itemId}
+          onClose={() => setRenamingClip(null)}
+          onSave={(name) => handleRename(renamingClip.itemId, name)}
+        />
+      )}
+      {deletingClip && (
+        <DeleteConfirmModal
+          clip={deletingClip}
+          busy={busyId === deletingClip.itemId}
+          onClose={() => setDeletingClip(null)}
+          onConfirm={() => handleDelete(deletingClip.itemId)}
         />
       )}
     </div>
@@ -560,39 +552,150 @@ function CutModal({
   );
 }
 
-function RenameInline({
-  initialValue,
+// Shared overlay/card chrome matching the prototype's modal style (also
+// used by CutModal above): dark overlay, #4f4f80 border, 10px radius.
+function ModalOverlay({ children, maxWidth }: { children: ReactNode; maxWidth: number }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 100,
+        padding: 16,
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          background: "var(--panel)",
+          border: "1px solid #4f4f80",
+          borderRadius: 10,
+          padding: 24,
+          maxWidth,
+          width: "100%",
+          boxSizing: "border-box",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// video-library spec: "Rename clip" - matches the prototype's rename modal
+// (a centered dialog, not an inline edit in the card).
+function RenameModal({
+  clip,
   busy,
-  onCancel,
+  onClose,
   onSave,
 }: {
-  initialValue: string;
+  clip: ClipSummary;
   busy: boolean;
-  onCancel: () => void;
+  onClose: () => void;
   onSave: (value: string) => void;
 }) {
-  const [value, setValue] = useState(initialValue);
+  const [value, setValue] = useState(clip.name);
   return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
+    <ModalOverlay maxWidth={420}>
+      <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 16 }}>Renomear clipe</div>
       <input
+        autoFocus
         value={value}
         onChange={(e) => setValue(e.target.value)}
         style={{
-          flex: 1,
+          width: "100%",
           background: "#0f0f12",
           border: "1px solid var(--border)",
           borderRadius: 4,
           color: "var(--text)",
-          padding: "4px 6px",
-          fontSize: "0.85rem",
+          padding: "10px 12px",
+          marginBottom: 20,
+          boxSizing: "border-box",
         }}
       />
-      <button className="btn-secondary" disabled={busy} onClick={() => onSave(value)}>
-        OK
-      </button>
-      <button className="btn-secondary" disabled={busy} onClick={onCancel}>
-        X
-      </button>
-    </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button
+          onClick={onClose}
+          disabled={busy}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#a3a3b3",
+            borderRadius: 100,
+            padding: "10px 20px",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={() => onSave(value)}
+          disabled={busy || !value.trim()}
+          style={{
+            background: "#fcfcfc",
+            color: "#0a0a13",
+            border: "none",
+            borderRadius: 100,
+            padding: "10px 20px",
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
+          Salvar
+        </button>
+      </div>
+    </ModalOverlay>
+  );
+}
+
+// video-library spec: "Delete requires confirmation" - matches the
+// prototype's confirmation modal (centered dialog with explicit warning
+// text), not an inline "Confirmar exclusão" swap in the card.
+function DeleteConfirmModal({
+  clip,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  clip: ClipSummary;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ModalOverlay maxWidth={440}>
+      <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>Excluir clipe</div>
+      <p style={{ fontSize: 14, color: "var(--text-dim)", marginBottom: 20 }}>
+        Tem certeza que deseja excluir &quot;{clip.hook || clip.name}&quot;? Essa ação não pode
+        ser desfeita.
+      </p>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button
+          onClick={onClose}
+          disabled={busy}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#a3a3b3",
+            borderRadius: 100,
+            padding: "10px 20px",
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Cancelar
+        </button>
+        <button className="btn-danger" onClick={onConfirm} disabled={busy}>
+          Excluir
+        </button>
+      </div>
+    </ModalOverlay>
   );
 }

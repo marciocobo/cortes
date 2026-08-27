@@ -35,6 +35,16 @@ export default function SubmitForm() {
   return (
     <form onSubmit={handleSubmit}>
       <div className="field" style={{ marginBottom: 16 }}>
+        <label htmlFor="title">Título do vídeo</label>
+        <input
+          id="title"
+          type="text"
+          required
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </div>
+      <div className="field" style={{ marginBottom: 16 }}>
         <label htmlFor="youtubeUrl">Link do YouTube</label>
         <input
           id="youtubeUrl"
@@ -45,22 +55,17 @@ export default function SubmitForm() {
           placeholder="https://www.youtube.com/watch?v=..."
         />
       </div>
-      <div className="field" style={{ marginBottom: 16 }}>
-        <label htmlFor="title">Título</label>
-        <input
-          id="title"
-          type="text"
-          required
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-      </div>
       {error && (
         <p className="error-text" style={{ marginBottom: 12 }}>
           {error}
         </p>
       )}
-      <button className="btn-primary" type="submit" disabled={loading}>
+      <button
+        className="btn-primary"
+        type="submit"
+        disabled={loading}
+        style={{ width: "auto", padding: "12px 24px" }}
+      >
         {loading ? "Enviando..." : "Enviar"}
       </button>
     </form>
