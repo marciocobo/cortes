@@ -278,8 +278,8 @@ button {
 }
 
 .clip-status-cortado {
-  color: var(--accent-blue);
-  border-color: var(--accent-blue);
+  color: var(--status-concluido);
+  border-color: var(--status-concluido);
 }
 
 .clip-status-processando {

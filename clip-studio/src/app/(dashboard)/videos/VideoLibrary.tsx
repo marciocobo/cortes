@@ -66,6 +66,58 @@ function TrashIcon() {
   );
 }
 
+// CutModal footer icons - prototype replaced "Pré-visualizar"/"Cancelar"/
+// "Salvar corte" with icon-only buttons: play (ghost, isolated on the
+// left), X (ghost) and a filled-white save/disk icon grouped on the right
+// - see their usage in CutModal for the layout/style split.
+function PlayFilledIcon() {
+  return (
+    <svg {...ICON_PROPS} fill="currentColor">
+      <polygon points="6 3 20 12 6 21 6 3" />
+    </svg>
+  );
+}
+
+// Shown in place of PlayFilledIcon while the CutModal preview is playing -
+// a true pause (resuming continues from the same position), not a reset.
+function PauseFilledIcon() {
+  return (
+    <svg {...ICON_PROPS} fill="currentColor">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+
+// The separate "Parar" button - resets the preview to effectiveStart
+// without playing, unlike pause (which keeps the current position).
+function StopFilledIcon() {
+  return (
+    <svg {...ICON_PROPS} fill="currentColor">
+      <rect x="5" y="5" width="14" height="14" rx="2" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+function SaveIcon() {
+  return (
+    <svg {...ICON_PROPS} width={16} height={16}>
+      <path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+      <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
+      <path d="M7 3v4a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V3.4" />
+    </svg>
+  );
+}
+
 function formatDuration(seconds: number | null) {
   if (seconds == null) return "--:--";
   const m = Math.floor(seconds / 60);
@@ -482,6 +534,7 @@ function CutModal({
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(duration);
   const [currentTime, setCurrentTime] = useState(0);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // The modal opens instantly with whatever duration is already in memory
@@ -508,18 +561,43 @@ function CutModal({
     onClose();
   }
 
+  // The button doubles as play/stop: clicking while already previewing
+  // stops playback instead of restarting it from effectiveStart.
+  // A true play/pause toggle - pausing keeps the current position, and
+  // playing again resumes from there (does NOT restart from
+  // effectiveStart). See handleStop below for the button that resets to
+  // the beginning instead.
   function handlePreview() {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = effectiveStart;
+    if (isPreviewPlaying) {
+      video.pause();
+      setIsPreviewPlaying(false);
+      return;
+    }
     video.play().catch(() => {});
+    setIsPreviewPlaying(true);
+  }
+
+  // Resets the preview to effectiveStart without playing - distinct from
+  // pause, which preserves the current position for resuming.
+  function handleStop() {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.currentTime = effectiveStart;
+    setCurrentTime(effectiveStart);
+    setIsPreviewPlaying(false);
   }
 
   function handleTimeUpdate() {
     const video = videoRef.current;
     if (!video) return;
     setCurrentTime(video.currentTime);
-    if (video.currentTime >= effectiveEnd) video.pause();
+    if (video.currentTime >= effectiveEnd) {
+      video.pause();
+      setIsPreviewPlaying(false);
+    }
   }
 
   // The actual cut runs in the background after this closes the modal
@@ -575,6 +653,7 @@ function CutModal({
             ref={videoRef}
             src={clip.downloadUrl}
             onTimeUpdate={handleTimeUpdate}
+            onPause={() => setIsPreviewPlaying(false)}
             style={{
               display: "block",
               margin: "0 auto 16px",
@@ -694,7 +773,7 @@ function CutModal({
           style={{
             display: "flex",
             gap: 8,
-            justifyContent: "flex-end",
+            justifyContent: "space-between",
             flexWrap: "wrap",
             position: "sticky",
             bottom: 0,
@@ -702,50 +781,57 @@ function CutModal({
             paddingTop: 8,
           }}
         >
-          <button
-            onClick={handlePreview}
-            disabled={!clip.downloadUrl}
-            style={{
-              background: "transparent",
-              border: "1px solid #fcfcfc",
-              color: "#fcfcfc",
-              borderRadius: 100,
-              padding: "10px 20px",
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            Pré-visualizar
-          </button>
-          <button
-            onClick={handleCancel}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "#a3a3b3",
-              borderRadius: 100,
-              padding: "10px 20px",
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            style={{
-              background: "#fcfcfc",
-              color: "#0a0a13",
-              border: "none",
-              borderRadius: 100,
-              padding: "10px 20px",
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
-          >
-            Salvar corte
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="icon-btn"
+              onClick={handlePreview}
+              disabled={!clip.downloadUrl}
+              title={isPreviewPlaying ? "Pausar" : "Play"}
+              aria-label={isPreviewPlaying ? "Pausar" : "Play"}
+            >
+              {isPreviewPlaying ? <PauseFilledIcon /> : <PlayFilledIcon />}
+            </button>
+            <button
+              className="icon-btn"
+              onClick={handleStop}
+              disabled={!clip.downloadUrl}
+              title="Parar"
+              aria-label="Parar"
+            >
+              <StopFilledIcon />
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="icon-btn"
+              onClick={handleCancel}
+              title="Cancelar"
+              aria-label="Cancelar"
+            >
+              <CloseIcon />
+            </button>
+            <button
+              onClick={handleSave}
+              title="Salvar corte"
+              aria-label="Salvar corte"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 32,
+                height: 32,
+                flexShrink: 0,
+                padding: 0,
+                borderRadius: 999,
+                border: "none",
+                background: "#fcfcfc",
+                color: "#0a0a13",
+                cursor: "pointer",
+              }}
+            >
+              <SaveIcon />
+            </button>
+          </div>
         </div>
       </div>
     </div>
