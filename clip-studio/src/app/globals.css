@@ -186,10 +186,13 @@ button {
   background: linear-gradient(135deg, #181826, #0c1d32);
 }
 
+/* Clips are 9:16 shorts, not 16:9 - object-fit:contain (not cover) keeps
+   the real vertical framing inside the card's 16:9 thumb-wrap instead of
+   cropping most of the frame away. The card's own footprint is untouched. */
 .video-card .thumb {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 

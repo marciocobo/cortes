@@ -409,23 +409,27 @@ function CutModal({
             src={clip.downloadUrl}
             onTimeUpdate={handleTimeUpdate}
             style={{
-              width: "100%",
-              maxHeight: "38vh",
+              display: "block",
+              margin: "0 auto 16px",
+              width: "auto",
+              maxWidth: "100%",
+              maxHeight: "55vh",
+              aspectRatio: "9 / 16",
               borderRadius: 8,
               background: "#000",
-              marginBottom: 16,
-              display: "block",
               objectFit: "contain",
             }}
           />
         ) : (
           <div
             style={{
-              width: "100%",
-              aspectRatio: "16/9",
+              margin: "0 auto 16px",
+              width: "auto",
+              maxWidth: "100%",
+              maxHeight: "55vh",
+              aspectRatio: "9 / 16",
               background: "#000",
               borderRadius: 8,
-              marginBottom: 16,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
