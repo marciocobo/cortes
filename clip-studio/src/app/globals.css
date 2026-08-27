@@ -228,6 +228,24 @@ button {
   font-size: 0.8rem;
 }
 
+/* Loading placeholder for the /videos grid - the n8n webhook + per-clip
+   Graph API meta fetch (see n8n-client.ts listClips) can take several
+   seconds, and a bare "Carregando..." text read as a stuck page. */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.skeleton-block {
+  background: linear-gradient(90deg, #1a1a1e 25%, #232328 37%, #1a1a1e 63%);
+  background-size: 400px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.video-card .thumb-wrap.skeleton-block {
+  border-radius: inherit;
+}
+
 /* Clip status badge (Original/Rascunho/Cortado) - outline pill matching
    the prototype's {{v.status}} badge, distinct from the filled
    submission-status .pill variants above. */

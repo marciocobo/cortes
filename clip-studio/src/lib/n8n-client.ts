@@ -38,9 +38,18 @@ class N8nNotConfiguredError extends Error {
 
 const MAX_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 500;
+const WEBHOOK_TIMEOUT_MS = 20_000;
+const META_FETCH_TIMEOUT_MS = 10_000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** fetch() with an AbortController-based timeout - plain fetch() never times out on its own. */
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 /**
@@ -70,7 +79,11 @@ async function callWebhook<T>(path: string, body: unknown): Promise<T> {
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const res = await fetch(url, { method: "POST", headers, body: payload });
+      const res = await fetchWithTimeout(
+        url,
+        { method: "POST", headers, body: payload },
+        WEBHOOK_TIMEOUT_MS
+      );
 
       if (res.ok) {
         return (await res.json()) as T;
@@ -80,7 +93,12 @@ async function callWebhook<T>(path: string, body: unknown): Promise<T> {
       lastError = new Error(`Chamada ao N8N falhou (${res.status}): ${text.slice(0, 300)}`);
       if (res.status < 500) break; // 4xx won't be fixed by retrying
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
+      lastError =
+        err instanceof Error && err.name === "AbortError"
+          ? new Error("Tempo limite excedido ao contatar o N8N.")
+          : err instanceof Error
+            ? err
+            : new Error(String(err));
     }
 
     if (attempt < MAX_ATTEMPTS) {
@@ -147,7 +165,11 @@ export async function listClips(): Promise<ClipSummary[]> {
       let meta: ClipMetaJson | null = null;
       if (metaItem?.["@microsoft.graph.downloadUrl"]) {
         try {
-          const res = await fetch(metaItem["@microsoft.graph.downloadUrl"]);
+          const res = await fetchWithTimeout(
+            metaItem["@microsoft.graph.downloadUrl"],
+            {},
+            META_FETCH_TIMEOUT_MS
+          );
           if (res.ok) meta = (await res.json()) as ClipMetaJson;
         } catch {
           // Missing/unreadable meta shouldn't hide the clip - see

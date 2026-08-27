@@ -64,6 +64,24 @@ function clipStatus(clip: ClipSummary): { label: string; className: string } {
   return { label: "Original", className: "clip-status-original" };
 }
 
+// Matches .video-card's real layout (thumb-wrap + name/meta/pill lines) so
+// the grid doesn't visibly reflow once real clips replace the placeholders.
+function VideoGridSkeleton() {
+  return (
+    <div className="video-grid">
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="card video-card">
+          <div className="thumb-wrap skeleton-block" />
+          <div className="body">
+            <div className="skeleton-block" style={{ height: 14, width: "80%", marginBottom: 8, borderRadius: 3 }} />
+            <div className="skeleton-block" style={{ height: 12, width: "50%", borderRadius: 3 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function VideoLibrary() {
   const [clips, setClips] = useState<ClipSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +150,7 @@ export default function VideoLibrary() {
     }
   }
 
-  if (clips === null) return <p style={{ color: "var(--text-dim)" }}>Carregando...</p>;
+  if (clips === null) return <VideoGridSkeleton />;
 
   if (error && clips.length === 0) {
     return <p className="error-text">{error}</p>;
