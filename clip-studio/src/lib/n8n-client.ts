@@ -116,6 +116,11 @@ type GraphDriveItem = {
   lastModifiedDateTime?: string;
   "@microsoft.graph.downloadUrl"?: string;
   file?: { mimeType?: string };
+  // Microsoft Graph extracts this directly from the video file itself
+  // (present on every .mp4 we've observed) - it's the ground truth for
+  // duration, unlike _meta.json's start/end, which can desync from the
+  // real file (e.g. a trim whose metadata-update step didn't complete).
+  video?: { duration?: number };
   thumbnails?: Array<{
     small?: { url?: string };
     medium?: { url?: string };
@@ -177,9 +182,21 @@ export async function listClips(): Promise<ClipSummary[]> {
         }
       }
 
+      // Prefer the real file's own duration (Graph's `video.duration`, in
+      // ms) over _meta.json's start/end - the meta file describes where the
+      // clip was CUT FROM in the source video, which can drift from the
+      // clip's OWN actual length if a trim's metadata-update step ever
+      // fails after the file itself was already replaced (see the
+      // "pai-antes-do-filho" incident: meta said 54.2s, the real file was
+      // 7s, and CutModal let a range be picked that the real file couldn't
+      // satisfy). Falls back to meta's start/end only when Graph hasn't
+      // extracted video metadata for this file (rare, but not guaranteed).
       const start = meta?.real_start ?? meta?.start ?? null;
       const end = meta?.real_end ?? meta?.end ?? null;
-      const durationSeconds = start != null && end != null ? end - start : null;
+      const metaDurationSeconds = start != null && end != null ? end - start : null;
+      const realDurationSeconds =
+        typeof mp4.video?.duration === "number" ? mp4.video.duration / 1000 : null;
+      const durationSeconds = realDurationSeconds ?? metaDurationSeconds;
 
       return {
         itemId: mp4.id,

@@ -90,7 +90,6 @@ export default function VideoLibrary() {
   const [deletingClip, setDeletingClip] = useState<ClipSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cuttingClip, setCuttingClip] = useState<ClipSummary | null>(null);
-  const [openingCutId, setOpeningCutId] = useState<string | null>(null);
 
   async function load() {
     setError(null);
@@ -110,25 +109,31 @@ export default function VideoLibrary() {
   // sliders are bounded by whatever `durationSeconds` this component has in
   // memory, so a stale value lets the user pick a range the actual file on
   // OneDrive no longer has, and "Salvar corte" fails server-side with a
-  // confusing error. Refetch right before opening the modal so the bounds
-  // always match the real file. Falls back to the in-memory clip (not an
-  // empty list) on a transient network error - n8n still validates the
-  // range against the real file either way, so this is a best-effort
-  // freshness check, not the only safety net.
-  async function handleOpenCut(clip: ClipSummary) {
-    setOpeningCutId(clip.itemId);
-    try {
-      const res = await fetch("/api/clips");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Falha ao carregar vídeos");
-      const fresh: ClipSummary[] = data.clips;
-      setClips(fresh);
-      setCuttingClip(fresh.find((c) => c.itemId === clip.itemId) ?? clip);
-    } catch {
-      setCuttingClip(clip);
-    } finally {
-      setOpeningCutId(null);
-    }
+  // confusing error. Opens the modal instantly with what's already in
+  // memory (no waiting), then refreshes /api/clips in the background and
+  // silently corrects the open modal's duration if it turns out stale -
+  // /api/clips lists every clip + fetches every _meta.json (8-13s per the
+  // n8n-client.ts listClips() doc comment), so blocking the click on it
+  // made "Cortar" feel broken. n8n still validates the range against the
+  // real file server-side either way, so this is a best-effort freshness
+  // correction, not the only safety net.
+  function handleOpenCut(clip: ClipSummary) {
+    setCuttingClip(clip);
+    fetch("/api/clips")
+      .then((res) => res.json().then((data) => ({ res, data })))
+      .then(({ res, data }) => {
+        if (!res.ok) return;
+        const fresh: ClipSummary[] = data.clips;
+        setClips(fresh);
+        const updated = fresh.find((c) => c.itemId === clip.itemId);
+        if (updated) {
+          setCuttingClip((current) => (current?.itemId === clip.itemId ? updated : current));
+        }
+      })
+      .catch(() => {
+        // Transient network error - keep showing what's already open;
+        // n8n's own server-side validation is still the real safety net.
+      });
   }
 
   useEffect(() => {
@@ -229,14 +234,10 @@ export default function VideoLibrary() {
                 <button
                   className="btn-secondary"
                   onClick={() => handleOpenCut(clip)}
-                  disabled={
-                    busyId === clip.itemId ||
-                    openingCutId === clip.itemId ||
-                    clip.durationSeconds == null
-                  }
+                  disabled={busyId === clip.itemId || clip.durationSeconds == null}
                   title={clip.durationSeconds == null ? "Duração do clipe desconhecida" : undefined}
                 >
-                  {openingCutId === clip.itemId ? "Abrindo..." : "Cortar"}
+                  Cortar
                 </button>
                 <button
                   className="btn-secondary"
@@ -309,13 +310,22 @@ function CutModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The modal opens instantly with whatever duration is already in memory
+  // (see handleOpenCut) and a background refresh may correct `duration`
+  // moments later if it was stale. Clamping here (derived at render time)
+  // rather than syncing trimStart/trimEnd via an effect keeps the selection
+  // from ever pointing past a real duration that just shrank, without the
+  // cascading-render setState-in-effect anti-pattern.
+  const effectiveStart = Math.min(trimStart, duration);
+  const effectiveEnd = Math.min(trimEnd, duration);
+
   function handleTrimStartChange(value: number) {
-    setTrimStart(Math.min(value, trimEnd - 1 < 0 ? 0 : trimEnd - 1));
+    setTrimStart(Math.min(value, effectiveEnd - 1 < 0 ? 0 : effectiveEnd - 1));
     saveDraft(clip.itemId);
   }
 
   function handleTrimEndChange(value: number) {
-    setTrimEnd(Math.max(value, trimStart + 1 > duration ? duration : trimStart + 1));
+    setTrimEnd(Math.max(value, effectiveStart + 1 > duration ? duration : effectiveStart + 1));
     saveDraft(clip.itemId);
   }
 
@@ -327,7 +337,7 @@ function CutModal({
   function handlePreview() {
     const video = videoRef.current;
     if (!video) return;
-    video.currentTime = trimStart;
+    video.currentTime = effectiveStart;
     video.play().catch(() => {});
   }
 
@@ -335,12 +345,12 @@ function CutModal({
     const video = videoRef.current;
     if (!video) return;
     setCurrentTime(video.currentTime);
-    if (video.currentTime >= trimEnd) video.pause();
+    if (video.currentTime >= effectiveEnd) video.pause();
   }
 
   async function handleSave() {
     setError(null);
-    if (trimEnd <= trimStart) {
+    if (effectiveEnd <= effectiveStart) {
       setError("O fim deve ser maior que o início");
       return;
     }
@@ -351,8 +361,8 @@ function CutModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           itemId: clip.itemId,
-          newStartSec: trimStart,
-          newEndSec: trimEnd,
+          newStartSec: effectiveStart,
+          newEndSec: effectiveEnd,
           currentClipDurationSec: duration,
         }),
       });
@@ -367,8 +377,8 @@ function CutModal({
     }
   }
 
-  const fillStart = duration > 0 ? (trimStart / duration) * 100 : 0;
-  const fillWidth = duration > 0 ? ((trimEnd - trimStart) / duration) * 100 : 0;
+  const fillStart = duration > 0 ? (effectiveStart / duration) * 100 : 0;
+  const fillWidth = duration > 0 ? ((effectiveEnd - effectiveStart) / duration) * 100 : 0;
   const playheadLeft = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
@@ -454,7 +464,7 @@ function CutModal({
           <span>
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
-          <span>Selecionado: {formatTime(trimEnd - trimStart)}</span>
+          <span>Selecionado: {formatTime(effectiveEnd - effectiveStart)}</span>
         </div>
         <div
           style={{
@@ -490,28 +500,28 @@ function CutModal({
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
           <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
-            Início — {formatTime(trimStart)}
+            Início — {formatTime(effectiveStart)}
           </label>
           <input
             type="range"
             min={0}
             max={duration}
             step={1}
-            value={trimStart}
+            value={effectiveStart}
             onChange={(e) => handleTrimStartChange(Number(e.target.value))}
             style={{ width: "100%" }}
           />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
           <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
-            Fim — {formatTime(trimEnd)}
+            Fim — {formatTime(effectiveEnd)}
           </label>
           <input
             type="range"
             min={0}
             max={duration}
             step={1}
-            value={trimEnd}
+            value={effectiveEnd}
             onChange={(e) => handleTrimEndChange(Number(e.target.value))}
             style={{ width: "100%" }}
           />
