@@ -1,4 +1,5 @@
 import { getAppConfig } from "@/lib/config";
+import { prisma } from "@/lib/prisma";
 
 /**
  * Every OneDrive interaction goes through n8n webhooks - Clip Studio never
@@ -90,7 +91,23 @@ async function callWebhook<T>(path: string, body: unknown): Promise<T> {
       }
 
       const text = await res.text().catch(() => "");
-      lastError = new Error(`Chamada ao N8N falhou (${res.status}): ${text.slice(0, 300)}`);
+      // n8n's "Webhook Cortar Clipe" branch (see the "Formatar Erro Corte"/
+      // "Responder Corte Erro" nodes) returns a real JSON body on failure -
+      // {"ok":false,"error":"<the actual node error, e.g. ffprobe's
+      // measured duration>"} - instead of n8n's own generic wrapper. Use
+      // that message directly when present; other webhooks/failure modes
+      // still fall back to the raw response text.
+      const parsedError = (() => {
+        try {
+          const parsed = JSON.parse(text);
+          return typeof parsed?.error === "string" ? parsed.error : null;
+        } catch {
+          return null;
+        }
+      })();
+      lastError = new Error(
+        parsedError ?? `Chamada ao N8N falhou (${res.status}): ${text.slice(0, 300)}`
+      );
       if (res.status < 500) break; // 4xx won't be fixed by retrying
     } catch (err) {
       lastError =
@@ -113,6 +130,7 @@ type GraphDriveItem = {
   id: string;
   name: string;
   size?: number;
+  createdDateTime?: string;
   lastModifiedDateTime?: string;
   "@microsoft.graph.downloadUrl"?: string;
   file?: { mimeType?: string };
@@ -128,14 +146,15 @@ type GraphDriveItem = {
   }>;
 };
 
+// start/end/real_start/real_end/edited deliberately excluded - see the
+// durationSeconds and `edited` comments in listClips() for why neither
+// duration nor edited-status ever come from this file. Clip Studio's trim
+// webhook no longer writes to _meta.json at all (see the incident where a
+// transient OneDrive auth failure on that write left the video file
+// already cut but the meta stuck on the pre-cut state).
 type ClipMetaJson = {
   hook?: string;
   reason?: string;
-  start?: number;
-  end?: number;
-  real_start?: number;
-  real_end?: number;
-  edited?: boolean;
 };
 
 /**
@@ -160,6 +179,16 @@ export async function listClips(): Promise<ClipSummary[]> {
     }
   }
 
+  // Fallback for when Graph's `video.duration` facet is missing (see the
+  // durationSeconds comment below) - a single batched query, not one per
+  // clip, since most clips won't need it.
+  const cachedDurations = await prisma.clipDuration.findMany({
+    where: { itemId: { in: mp4Items.map((mp4) => mp4.id) } },
+  });
+  const cachedDurationByItemId = new Map(
+    cachedDurations.map((c) => [c.itemId, c.durationSeconds])
+  );
+
   return Promise.all(
     mp4Items.map(async (mp4): Promise<ClipSummary> => {
       const stem = mp4.name.slice(0, -".mp4".length);
@@ -182,21 +211,44 @@ export async function listClips(): Promise<ClipSummary[]> {
         }
       }
 
-      // Prefer the real file's own duration (Graph's `video.duration`, in
-      // ms) over _meta.json's start/end - the meta file describes where the
-      // clip was CUT FROM in the source video, which can drift from the
-      // clip's OWN actual length if a trim's metadata-update step ever
-      // fails after the file itself was already replaced (see the
-      // "pai-antes-do-filho" incident: meta said 54.2s, the real file was
-      // 7s, and CutModal let a range be picked that the real file couldn't
-      // satisfy). Falls back to meta's start/end only when Graph hasn't
-      // extracted video metadata for this file (rare, but not guaranteed).
-      const start = meta?.real_start ?? meta?.start ?? null;
-      const end = meta?.real_end ?? meta?.end ?? null;
-      const metaDurationSeconds = start != null && end != null ? end - start : null;
-      const realDurationSeconds =
-        typeof mp4.video?.duration === "number" ? mp4.video.duration / 1000 : null;
-      const durationSeconds = realDurationSeconds ?? metaDurationSeconds;
+      // Duration never comes from _meta.json - its start/end/real_start/
+      // real_end describe where the clip was CUT FROM in the source video,
+      // kept by the "Blocos" pipeline and by Clip Studio's own trim
+      // webhook - both have been observed drifting from the clip's OWN
+      // actual length in production (a fresh, never-trimmed clip whose
+      // real_start/real_end claimed 79.8s while the real file measured
+      // 25.3s via ffprobe; a repeatedly-trimmed clip whose start/end still
+      // showed its original 54.2s while the file was down to 2-7s).
+      // Trusting either one let the user pick a trim range the real file
+      // couldn't satisfy.
+      //
+      // Prefer Graph's own `video.duration` facet (extracted from the real
+      // file, in ms) when present - it's live ground truth. Graph
+      // populates this asynchronously and has been observed missing
+      // entirely for a meaningful share of clips (including ones
+      // successfully re-cut minutes earlier), so fall back to the local
+      // ClipDuration cache: a real ffprobe measurement the trim webhook
+      // handed back (on either a successful cut or a rejected one - n8n's
+      // validation error carries the real duration it just measured),
+      // persisted in Clip Studio's own database instead of a file another
+      // pipeline writes to. Only null (shows "--:--", disables Cortar in
+      // VideoLibrary.tsx) when NEITHER source has ever measured this file.
+      const durationSeconds =
+        (typeof mp4.video?.duration === "number" ? mp4.video.duration / 1000 : null) ??
+        cachedDurationByItemId.get(mp4.id) ??
+        null;
+
+      // "Cortado" comes from the video file itself, not a meta.json flag
+      // the trim webhook used to set (and could fail to, leaving an
+      // already-cut file looking "Original" forever - see the OneDrive
+      // auth-failure incident). Every trim replaces the file's content via
+      // OneDrive's upload session, which always bumps lastModifiedDateTime
+      // past createdDateTime - a clip that was never touched since the
+      // "Blocos" pipeline generated it has the two timestamps equal.
+      const edited =
+        mp4.createdDateTime != null &&
+        mp4.lastModifiedDateTime != null &&
+        new Date(mp4.lastModifiedDateTime).getTime() !== new Date(mp4.createdDateTime).getTime();
 
       return {
         itemId: mp4.id,
@@ -208,7 +260,7 @@ export async function listClips(): Promise<ClipSummary[]> {
         reason: meta?.reason ?? null,
         sizeBytes: mp4.size ?? null,
         modifiedAt: mp4.lastModifiedDateTime ?? null,
-        edited: meta?.edited === true,
+        edited,
       };
     })
   );
@@ -228,12 +280,47 @@ export async function deleteClip(itemId: string): Promise<void> {
  * not the original source video - this can only shorten an already-produced
  * clip.
  */
+/** Upserts a real ffprobe-measured duration into the local cache - see the durationSeconds comment in listClips(). */
+async function cacheClipDuration(itemId: string, durationSeconds: number): Promise<void> {
+  await prisma.clipDuration.upsert({
+    where: { itemId },
+    create: { itemId, durationSeconds },
+    update: { durationSeconds },
+  });
+}
+
 export async function trimClip(
   itemId: string,
   newStartSec: number,
   newEndSec: number
 ): Promise<{ durationSeconds: number }> {
-  return callWebhook("clip-studio/clips/trim", { itemId, newStartSec, newEndSec });
+  try {
+    const result = await callWebhook<{ durationSeconds: number }>("clip-studio/clips/trim", {
+      itemId,
+      newStartSec,
+      newEndSec,
+    });
+    // A successful trim always cuts to exactly [newStartSec, newEndSec) -
+    // n8n already validated that range against ffprobe before cutting, so
+    // this is real, not a guess.
+    await cacheClipDuration(itemId, newEndSec - newStartSec).catch(() => {
+      // Caching is a best-effort optimization for the library grid - never
+      // let a DB hiccup turn an otherwise-successful trim into an error.
+    });
+    return result;
+  } catch (err) {
+    // n8n's validation error carries the real duration ffprobe just
+    // measured, e.g. "ERRO: intervalo invalido (start=1 end=78
+    // duracao=25.300000)" (see callWebhook's parsedError handling above) -
+    // cache it even though the trim itself failed, so the library grid
+    // shows this clip's real length instead of "--:--" on the next load.
+    const measuredDuration =
+      err instanceof Error ? err.message.match(/duracao=([\d.]+)/)?.[1] : undefined;
+    if (measuredDuration != null) {
+      await cacheClipDuration(itemId, Number(measuredDuration)).catch(() => {});
+    }
+    throw err;
+  }
 }
 
 /** Checks whether the given original file name now exists in Videos-Cortes/Videos (pipeline finished). */

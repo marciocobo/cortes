@@ -4,6 +4,68 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ClipSummary } from "@/lib/n8n-client";
 
+// video-library spec: video-card action icons - the prototype replaced the
+// old text buttons (Cortar/Renomear/Excluir) with plain circular icon
+// buttons (scissors/pencil/trash, all neutral - "Excluir" has no
+// destructive red in the mockup, only the DeleteConfirmModal's real
+// confirmation does). Hand-rolled inline SVGs matching that icon set
+// instead of adding an icon library dependency for 4 icons - the project
+// already hand-rolls the play-icon SVG the same way.
+const ICON_PROPS = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
+
+function DownloadIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function ScissorsIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <circle cx="6" cy="6" r="3" />
+      <path d="M8.12 8.12 12 12" />
+      <path d="M20 4 8.12 15.88" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M14.8 14.8 20 20" />
+    </svg>
+  );
+}
+
+// Unused while the Renomear icon-button is hidden (see its former call
+// site further down) - kept for when it's re-enabled.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function RenameIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M3 6h18" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
 function formatDuration(seconds: number | null) {
   if (seconds == null) return "--:--";
   const m = Math.floor(seconds / 60);
@@ -59,7 +121,11 @@ function clearDraft(itemId: string) {
   }
 }
 
-function clipStatus(clip: ClipSummary): { label: string; className: string } {
+function clipStatus(
+  clip: ClipSummary,
+  isProcessing: boolean
+): { label: string; className: string } {
+  if (isProcessing) return { label: "Processando", className: "clip-status-processando" };
   if (clip.edited) return { label: "Cortado", className: "clip-status-cortado" };
   if (hasDraft(clip.itemId)) return { label: "Rascunho", className: "clip-status-rascunho" };
   return { label: "Original", className: "clip-status-original" };
@@ -90,8 +156,10 @@ export default function VideoLibrary() {
   const [deletingClip, setDeletingClip] = useState<ClipSummary | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cuttingClip, setCuttingClip] = useState<ClipSummary | null>(null);
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
   async function load() {
+    lastLoadRef.current = Date.now();
     setError(null);
     try {
       const res = await fetch("/api/clips");
@@ -104,37 +172,107 @@ export default function VideoLibrary() {
     }
   }
 
-  // A clip's real duration can shrink after a trim done elsewhere (another
-  // tab, another session) without this page ever reloading - CutModal's
-  // sliders are bounded by whatever `durationSeconds` this component has in
-  // memory, so a stale value lets the user pick a range the actual file on
-  // OneDrive no longer has, and "Salvar corte" fails server-side with a
-  // confusing error. Opens the modal instantly with what's already in
-  // memory (no waiting), then refreshes /api/clips in the background and
-  // silently corrects the open modal's duration if it turns out stale -
-  // /api/clips lists every clip + fetches every _meta.json (8-13s per the
-  // n8n-client.ts listClips() doc comment), so blocking the click on it
-  // made "Cortar" feel broken. n8n still validates the range against the
-  // real file server-side either way, so this is a best-effort freshness
-  // correction, not the only safety net.
+  // Deliberately NOT refetching /api/clips here to "freshen" the duration
+  // before opening: it did the opposite of helping. listClips() lists the
+  // whole folder AND fetches every single clip's _meta.json individually
+  // (an N+1 Microsoft Graph call pattern over 100+ clips) - refetching it
+  // on every "Cortar" click, on top of the focus/visibility refresh below,
+  // is exactly what tripped Graph's `activityLimitReached` throttling in
+  // production and took the whole library down (every endpoint shares the
+  // same OneDrive app registration/quota). The stale-duration problem this
+  // was trying to prevent is now handled more cheaply anyway: if the real
+  // file turns out shorter than what's shown, n8n's trim webhook rejects
+  // it and returns the actual measured duration in the error (see
+  // handleSaveCut below), which corrects this clip without a full relist.
   function handleOpenCut(clip: ClipSummary) {
     setCuttingClip(clip);
-    fetch("/api/clips")
+  }
+
+  // The actual cut (wget the current file + ffprobe + ffmpeg + chunked
+  // upload back to OneDrive) takes several seconds on the n8n side - real
+  // executions have run 7-9s even on success. Blocking the modal on that
+  // network call made every hiccup (including the stale-duration race
+  // handleOpenCut can't fully close) surface as a raw, confusing error the
+  // user had to sit through. Instead: close the modal immediately, mark
+  // the card "Processando", and let this fetch run in the background -
+  // `load()` on success naturally flips the card to "Cortado" via the
+  // meta.json `edited` flag n8n's own workflow already sets.
+  function handleSaveCut(clip: ClipSummary, newStartSec: number, newEndSec: number) {
+    clearDraft(clip.itemId);
+    setCuttingClip(null);
+    setProcessingIds((prev) => new Set(prev).add(clip.itemId));
+    fetch("/api/clips/trim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        itemId: clip.itemId,
+        newStartSec,
+        newEndSec,
+        currentClipDurationSec: clip.durationSeconds ?? 0,
+      }),
+    })
       .then((res) => res.json().then((data) => ({ res, data })))
       .then(({ res, data }) => {
-        if (!res.ok) return;
-        const fresh: ClipSummary[] = data.clips;
-        setClips(fresh);
-        const updated = fresh.find((c) => c.itemId === clip.itemId);
-        if (updated) {
-          setCuttingClip((current) => (current?.itemId === clip.itemId ? updated : current));
+        if (!res.ok) throw new Error(data.error ?? "Falha ao cortar o vídeo");
+        // /api/clips/trim's own response already carries the exact
+        // durationSeconds it validated against the real file before
+        // cutting - it's authoritative. Graph's `video.duration` facet
+        // (the only other duration source, see n8n-client.ts) is
+        // populated asynchronously and is often still missing right after
+        // a fresh upload, so load()'s refetch alone would show "--:--"
+        // immediately after a successful cut. Patch it in as a fallback
+        // only where the fresh fetch still came back unknown - if Graph
+        // DID catch up by the time load() resolves, that real value wins.
+        const knownDuration =
+          typeof data.durationSeconds === "number" ? data.durationSeconds : null;
+        return load().then(() => {
+          if (knownDuration == null) return;
+          setClips(
+            (prev) =>
+              prev?.map((c) =>
+                c.itemId === clip.itemId && c.durationSeconds == null
+                  ? { ...c, durationSeconds: knownDuration }
+                  : c
+              ) ?? prev
+          );
+        });
+      })
+      .catch((err) => {
+        // n8n's "Webhook Cortar Clipe" branch now returns the real node
+        // error (see n8n-client.ts's callWebhook) instead of a generic
+        // wrapper - the most common one carries the REAL duration ffprobe
+        // just measured, e.g. "ERRO: intervalo invalido (start=1 end=78
+        // duracao=25.300000)". When present, correct this clip's duration
+        // immediately instead of waiting on a full reload, so reopening
+        // the cut modal right away already has accurate slider bounds.
+        const message = err instanceof Error ? err.message : "Falha ao cortar o vídeo";
+        const measuredDuration = message.match(/duracao=([\d.]+)/)?.[1];
+        if (measuredDuration != null) {
+          const realDuration = Number(measuredDuration);
+          setClips(
+            (prev) =>
+              prev?.map((c) =>
+                c.itemId === clip.itemId ? { ...c, durationSeconds: realDuration } : c
+              ) ?? prev
+          );
+          setError(
+            `Falha ao cortar "${clip.hook || clip.name}": o vídeo agora tem apenas ` +
+              `${formatDuration(realDuration)} - os valores foram corrigidos, abra o corte de novo.`
+          );
+        } else {
+          setError(`Falha ao cortar "${clip.hook || clip.name}": ${message}`);
         }
       })
-      .catch(() => {
-        // Transient network error - keep showing what's already open;
-        // n8n's own server-side validation is still the real safety net.
+      .finally(() => {
+        setProcessingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(clip.itemId);
+          return next;
+        });
       });
   }
+
+  const lastLoadRef = useRef(0);
 
   useEffect(() => {
     // load() sets state from the fetch response (an external system), not
@@ -142,6 +280,35 @@ export default function VideoLibrary() {
     // legitimate case react-hooks/set-state-in-effect's own docs call out.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
+  }, []);
+
+  // Rename/delete/trim already refresh via load() right after they finish
+  // in THIS tab - this covers changes made elsewhere (another tab, another
+  // session, or a trim that finished after the user tabbed away) so
+  // returning to this screen doesn't need a manual reload to catch up.
+  // Rate-limited to at most once every 2 minutes: /api/clips lists the
+  // whole folder AND fetches every single clip's _meta.json individually
+  // (an N+1 Microsoft Graph call pattern over 100+ clips) - refetching it
+  // on every tab-focus/visibility flip with no guard is exactly what
+  // tripped Graph's `activityLimitReached` throttling in production and
+  // took the whole library down for a few minutes (every endpoint shares
+  // the same OneDrive app registration/quota).
+  useEffect(() => {
+    const MIN_INTERVAL_MS = 2 * 60 * 1000;
+    function refreshIfDue() {
+      if (Date.now() - lastLoadRef.current < MIN_INTERVAL_MS) return;
+      lastLoadRef.current = Date.now();
+      load();
+    }
+    function handleVisible() {
+      if (document.visibilityState === "visible") refreshIfDue();
+    }
+    window.addEventListener("focus", refreshIfDue);
+    document.addEventListener("visibilitychange", handleVisible);
+    return () => {
+      window.removeEventListener("focus", refreshIfDue);
+      document.removeEventListener("visibilitychange", handleVisible);
+    };
   }, []);
 
   async function handleRename(itemId: string, newName: string) {
@@ -197,75 +364,83 @@ export default function VideoLibrary() {
     <div>
       {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
       <div className="video-grid">
-        {clips.map((clip) => (
-          <div key={clip.itemId} className="card video-card">
-            <div className="thumb-wrap">
-              {clip.thumbnailUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={clip.thumbnailUrl} alt="" className="thumb" />
-              ) : (
-                <svg className="play-icon" viewBox="0 0 24 24" fill="white">
-                  <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.5)" />
-                  <path d="M10 8l6 4-6 4V8z" />
-                </svg>
-              )}
-              <span className="duration-badge">{formatDuration(clip.durationSeconds)}</span>
-            </div>
-            <div className="body">
-              <p className="name">{clip.hook || clip.name}</p>
-              <p className="meta">
-                {[formatSize(clip.sizeBytes), formatDate(clip.modifiedAt)].filter(Boolean).join(" · ")}
-              </p>
-              {(() => {
-                const status = clipStatus(clip);
-                return (
-                  <span className={`clip-status-pill ${status.className}`}>{status.label}</span>
-                );
-              })()}
-              <div className="actions">
-                {clip.downloadUrl && (
-                  <a
-                    className="btn-secondary"
-                    href={`/api/clips/download?itemId=${encodeURIComponent(clip.itemId)}`}
-                  >
-                    Baixar
-                  </a>
+        {clips.map((clip) => {
+          const isProcessing = processingIds.has(clip.itemId);
+          const status = clipStatus(clip, isProcessing);
+          return (
+            <div key={clip.itemId} className="card video-card">
+              <div className="thumb-wrap">
+                {clip.thumbnailUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={clip.thumbnailUrl} alt="" className="thumb" />
+                ) : (
+                  <svg className="play-icon" viewBox="0 0 24 24" fill="white">
+                    <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.5)" />
+                    <path d="M10 8l6 4-6 4V8z" />
+                  </svg>
                 )}
-                <button
-                  className="btn-secondary"
-                  onClick={() => handleOpenCut(clip)}
-                  disabled={busyId === clip.itemId || clip.durationSeconds == null}
-                  title={clip.durationSeconds == null ? "Duração do clipe desconhecida" : undefined}
-                >
-                  Cortar
-                </button>
-                <button
-                  className="btn-secondary"
-                  onClick={() => setRenamingClip(clip)}
-                  disabled={busyId === clip.itemId}
-                >
-                  Renomear
-                </button>
-                <button
-                  className="btn-danger"
-                  onClick={() => setDeletingClip(clip)}
-                  disabled={busyId === clip.itemId}
-                >
-                  Excluir
-                </button>
+                <span className="duration-badge">{formatDuration(clip.durationSeconds)}</span>
+              </div>
+              <div className="body">
+                <p className="name">{clip.hook || clip.name}</p>
+                <p className="meta">
+                  {[formatSize(clip.sizeBytes), formatDate(clip.modifiedAt)].filter(Boolean).join(" · ")}
+                </p>
+                <span className={`clip-status-pill ${status.className}`}>{status.label}</span>
+                <div className="actions">
+                  {clip.downloadUrl && (
+                    <a
+                      className="icon-btn"
+                      href={`/api/clips/download?itemId=${encodeURIComponent(clip.itemId)}`}
+                      title="Baixar"
+                      aria-label="Baixar"
+                    >
+                      <DownloadIcon />
+                    </a>
+                  )}
+                  <button
+                    className="icon-btn"
+                    onClick={() => handleOpenCut(clip)}
+                    disabled={busyId === clip.itemId || isProcessing || clip.durationSeconds == null}
+                    title={
+                      clip.durationSeconds == null ? "Duração do clipe desconhecida" : "Cortar"
+                    }
+                    aria-label="Cortar"
+                  >
+                    <ScissorsIcon />
+                  </button>
+                  {/* Renomear hidden for now: a Graph rename bumps the file's
+                      lastModifiedDateTime exactly like a trim does, and
+                      clipStatus()'s "Cortado" detection (see n8n-client.ts's
+                      `edited` comment) is entirely based on
+                      lastModifiedDateTime != createdDateTime - so renaming a
+                      never-cut clip would falsely flip it to "Cortado" with
+                      no way to tell the two apart from Graph's metadata
+                      alone. Re-enable once edited-detection has a signal
+                      that survives a plain rename (e.g. also comparing file
+                      size/hash, not just timestamps) - rename itself
+                      (handleRename/RenameModal) is untouched below, only
+                      the entry point is hidden. */}
+                  <button
+                    className="icon-btn"
+                    onClick={() => setDeletingClip(clip)}
+                    disabled={busyId === clip.itemId || isProcessing}
+                    title="Excluir"
+                    aria-label="Excluir"
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {cuttingClip && (
         <CutModal
           clip={cuttingClip}
           onClose={() => setCuttingClip(null)}
-          onSaved={async () => {
-            setCuttingClip(null);
-            await load();
-          }}
+          onSave={(newStartSec, newEndSec) => handleSaveCut(cuttingClip, newStartSec, newEndSec)}
         />
       )}
       {renamingClip && (
@@ -296,18 +471,17 @@ export default function VideoLibrary() {
 function CutModal({
   clip,
   onClose,
-  onSaved,
+  onSave,
 }: {
   clip: ClipSummary;
   onClose: () => void;
-  onSaved: () => void;
+  onSave: (newStartSec: number, newEndSec: number) => void;
 }) {
   const duration = clip.durationSeconds ?? 0;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(duration);
   const [currentTime, setCurrentTime] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // The modal opens instantly with whatever duration is already in memory
@@ -348,33 +522,16 @@ function CutModal({
     if (video.currentTime >= effectiveEnd) video.pause();
   }
 
-  async function handleSave() {
+  // The actual cut runs in the background after this closes the modal
+  // (see handleSaveCut in VideoLibrary) - only the client-side validation
+  // (end > start) happens here, synchronously.
+  function handleSave() {
     setError(null);
     if (effectiveEnd <= effectiveStart) {
       setError("O fim deve ser maior que o início");
       return;
     }
-    setBusy(true);
-    try {
-      const res = await fetch("/api/clips/trim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          itemId: clip.itemId,
-          newStartSec: effectiveStart,
-          newEndSec: effectiveEnd,
-          currentClipDurationSec: duration,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Falha ao cortar o vídeo");
-      clearDraft(clip.itemId);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao cortar o vídeo");
-    } finally {
-      setBusy(false);
-    }
+    onSave(effectiveStart, effectiveEnd);
   }
 
   const fillStart = duration > 0 ? (effectiveStart / duration) * 100 : 0;
@@ -547,7 +704,7 @@ function CutModal({
         >
           <button
             onClick={handlePreview}
-            disabled={busy || !clip.downloadUrl}
+            disabled={!clip.downloadUrl}
             style={{
               background: "transparent",
               border: "1px solid #fcfcfc",
@@ -562,7 +719,6 @@ function CutModal({
           </button>
           <button
             onClick={handleCancel}
-            disabled={busy}
             style={{
               background: "transparent",
               border: "none",
@@ -577,7 +733,6 @@ function CutModal({
           </button>
           <button
             onClick={handleSave}
-            disabled={busy}
             style={{
               background: "#fcfcfc",
               color: "#0a0a13",

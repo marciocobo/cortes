@@ -282,6 +282,11 @@ button {
   border-color: var(--accent-blue);
 }
 
+.clip-status-processando {
+  color: var(--status-baixando);
+  border-color: var(--status-baixando);
+}
+
 .video-card .actions {
   display: flex;
   gap: 8px;
@@ -289,23 +294,37 @@ button {
   flex-wrap: wrap;
 }
 
-/* Prototype's video-card action buttons are full pills, not the default
-   4px-radius .btn-secondary/.btn-danger used elsewhere in the app. The
-   prototype also never treats the card-level "Excluir" trigger as a
-   destructive/red action - it's styled identically to Cortar/Renomear;
-   only the confirmation inside DeleteConfirmModal carries the danger
-   color. */
-.video-card .actions .btn-secondary,
-.video-card .actions .btn-danger {
+/* Prototype's video-card actions are plain circular icon buttons (scissors/
+   pencil/trash), not text pills - and "Excluir" carries no destructive red
+   here either; only the real confirmation inside DeleteConfirmModal does. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
   border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 0.75rem;
-}
-
-.video-card .actions .btn-danger {
+  border: 1px solid var(--border);
   background: transparent;
   color: var(--text-dim);
-  border-color: var(--border);
+  cursor: pointer;
+}
+
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-blue);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 table {

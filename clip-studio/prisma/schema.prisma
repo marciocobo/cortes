@@ -62,3 +62,22 @@ model AppConfig {
   stuckThresholdHours    Int      @default(8)
   updatedAt              DateTime @updatedAt
 }
+
+// Locally-cached, ffprobe-verified clip duration, keyed by OneDrive item ID.
+// Microsoft Graph's `video.duration` facet (the only other duration source
+// - see n8n-client.ts's listClips()) is populated asynchronously by
+// Microsoft and has been observed missing entirely for a meaningful share
+// of clips, including ones successfully re-cut minutes earlier. Every real
+// measurement the trim webhook gets back from ffprobe (on both a
+// successful cut and a rejected one - n8n's error message carries the
+// real duration it just measured) is durable ground truth for that file's
+// CURRENT bytes, so it's cached here instead of relying on Graph to
+// eventually catch up. Deliberately not _meta.json: that file is written
+// by a different pipeline/workflow than the one reading it, and has been
+// observed drifting from the real file when its own update step fails
+// partway through (see CLAUDE.md's "pai-antes-do-filho" incident).
+model ClipDuration {
+  itemId          String   @id
+  durationSeconds Float
+  updatedAt       DateTime @updatedAt
+}
