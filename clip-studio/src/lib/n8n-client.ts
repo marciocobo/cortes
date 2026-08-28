@@ -26,6 +26,7 @@ export type ClipSummary = {
   sizeBytes: number | null;
   modifiedAt: string | null;
   edited: boolean;
+  submittedByName: string | null;
 };
 
 class N8nNotConfiguredError extends Error {
@@ -152,9 +153,19 @@ type GraphDriveItem = {
 // webhook no longer writes to _meta.json at all (see the incident where a
 // transient OneDrive auth failure on that write left the video file
 // already cut but the meta stuck on the pre-cut state).
+// videoSource is the "Blocos" pipeline's own record of which source .mp4 a
+// clip was cut from (e.g. "cmtcd0wp900010jqg6k2yanci_Vigiai....mp4"). When
+// that video was submitted through Clip Studio's own YouTube ingestion
+// (task 2.6), the pipeline's source file name is exactly the Submission's
+// `uploadedFileName` - joining on that lets the library attribute a clip to
+// the user who submitted it, without the pipeline needing to know Clip
+// Studio's user model at all. Clips from videos dropped into OneDrive by
+// hand (pre-dating Clip Studio, or a manual upload) simply won't match any
+// submission - see submittedByName's "not fatal" fallback below.
 type ClipMetaJson = {
   hook?: string;
   reason?: string;
+  videoSource?: string;
 };
 
 /**
@@ -189,8 +200,8 @@ export async function listClips(): Promise<ClipSummary[]> {
     cachedDurations.map((c) => [c.itemId, c.durationSeconds])
   );
 
-  return Promise.all(
-    mp4Items.map(async (mp4): Promise<ClipSummary> => {
+  const withMeta = await Promise.all(
+    mp4Items.map(async (mp4) => {
       const stem = mp4.name.slice(0, -".mp4".length);
       const metaItem = metaByStem.get(stem);
       const thumb = mp4.thumbnails?.[0];
@@ -261,9 +272,30 @@ export async function listClips(): Promise<ClipSummary[]> {
         sizeBytes: mp4.size ?? null,
         modifiedAt: mp4.lastModifiedDateTime ?? null,
         edited,
+        videoSource: meta?.videoSource ?? null,
       };
     })
   );
+
+  // Attribute each clip to whoever submitted its source video, when that
+  // video came in through Clip Studio's own YouTube ingestion (see the
+  // videoSource/ClipMetaJson comment above) - a single batched lookup, not
+  // one query per clip.
+  const sources = [...new Set(withMeta.map((c) => c.videoSource).filter((s): s is string => !!s))];
+  const submissions = sources.length
+    ? await prisma.submission.findMany({
+        where: { uploadedFileName: { in: sources } },
+        select: { uploadedFileName: true, submittedBy: { select: { name: true } } },
+      })
+    : [];
+  const submitterByVideoSource = new Map(
+    submissions.map((s) => [s.uploadedFileName as string, s.submittedBy.name])
+  );
+
+  return withMeta.map(({ videoSource, ...clip }) => ({
+    ...clip,
+    submittedByName: videoSource ? (submitterByVideoSource.get(videoSource) ?? null) : null,
+  }));
 }
 
 export async function renameClip(itemId: string, newName: string): Promise<void> {

@@ -209,6 +209,7 @@ export default function VideoLibrary() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cuttingClip, setCuttingClip] = useState<ClipSummary | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState<"recent" | "oldest" | "name">("recent");
 
   async function load() {
     lastLoadRef.current = Date.now();
@@ -412,11 +413,36 @@ export default function VideoLibrary() {
     return <p className="empty-state">Nenhum clipe gerado ainda.</p>;
   }
 
+  const sortedClips = [...clips].sort((a, b) => {
+    if (sortBy === "name") return (a.hook || a.name).localeCompare(b.hook || b.name, "pt-BR");
+    const aTime = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
+    const bTime = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
+    return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
+  });
+
   return (
     <div>
       {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          aria-label="Ordenar vídeos"
+          style={{
+            background: "#0f0f12",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text)",
+            padding: "6px 8px",
+          }}
+        >
+          <option value="recent">Data: mais recente</option>
+          <option value="oldest">Data: mais antiga</option>
+          <option value="name">Nome: A-Z</option>
+        </select>
+      </div>
       <div className="video-grid">
-        {clips.map((clip) => {
+        {sortedClips.map((clip) => {
           const isProcessing = processingIds.has(clip.itemId);
           const status = clipStatus(clip, isProcessing);
           return (
@@ -437,6 +463,12 @@ export default function VideoLibrary() {
                 <p className="name">{clip.hook || clip.name}</p>
                 <p className="meta">
                   {[formatSize(clip.sizeBytes), formatDate(clip.modifiedAt)].filter(Boolean).join(" · ")}
+                  {clip.submittedByName && (
+                    <>
+                      <br />
+                      Por {clip.submittedByName}
+                    </>
+                  )}
                 </p>
                 <span className={`clip-status-pill ${status.className}`}>{status.label}</span>
                 <div className="actions">
@@ -826,8 +858,8 @@ function CutModal({
             marginBottom: 20,
           }}
         >
-          <span>Início — {formatTime(effectiveStart)}</span>
-          <span>Fim — {formatTime(effectiveEnd)}</span>
+          <span>Início: {formatTime(effectiveStart)}</span>
+          <span>Fim: {formatTime(effectiveEnd)}</span>
         </div>
 
         {error && (
