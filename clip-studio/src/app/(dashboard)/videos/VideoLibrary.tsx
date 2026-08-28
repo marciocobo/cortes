@@ -183,6 +183,20 @@ function clipStatus(
   return { label: "Original", className: "clip-status-original" };
 }
 
+// video-library spec: "Filter by status" - matches the prototype's 3-pill
+// filter row (Original/Cortado/Processando). Rascunho has no pill of its
+// own in the mock; it's a client-side-only refinement of "not cut yet", so
+// it buckets under "Original" for filtering even though clipStatus() above
+// still labels its badge "Rascunho".
+const STATUS_FILTERS = ["Original", "Cortado", "Processando"] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+function filterBucket(clip: ClipSummary, isProcessing: boolean): StatusFilter {
+  if (isProcessing) return "Processando";
+  if (clip.edited) return "Cortado";
+  return "Original";
+}
+
 // Matches .video-card's real layout (thumb-wrap + name/meta/pill lines) so
 // the grid doesn't visibly reflow once real clips replace the placeholders.
 function VideoGridSkeleton() {
@@ -209,7 +223,8 @@ export default function VideoLibrary() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [cuttingClip, setCuttingClip] = useState<ClipSummary | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState<"recent" | "oldest" | "name">("recent");
+  const [sortBy, setSortBy] = useState<"recent" | "oldest">("recent");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("Original");
 
   async function load() {
     lastLoadRef.current = Date.now();
@@ -403,46 +418,114 @@ export default function VideoLibrary() {
     }
   }
 
-  if (clips === null) return <VideoGridSkeleton />;
-
-  if (error && clips.length === 0) {
-    return <p className="error-text">{error}</p>;
-  }
-
-  if (clips.length === 0) {
-    return <p className="empty-state">Nenhum clipe gerado ainda.</p>;
-  }
-
-  const sortedClips = [...clips].sort((a, b) => {
-    if (sortBy === "name") return (a.hook || a.name).localeCompare(b.hook || b.name, "pt-BR");
-    const aTime = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
-    const bTime = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
-    return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
-  });
-
-  return (
-    <div>
-      {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+  // video-library spec: "Filter by status" header row - title and sort
+  // select share one line (justify-content:space-between), the status
+  // filter pills sit on their own line below, matching the prototype.
+  // Shown regardless of loading/error/empty state so the screen doesn't
+  // visibly reflow once clips arrive.
+  const header = (
+    <>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          <p className="eyebrow" style={{ margin: 0 }}>
+            Biblioteca
+          </p>
+          <h1 style={{ margin: 0 }}>Vídeos</h1>
+        </div>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
           aria-label="Ordenar vídeos"
           style={{
-            background: "#0f0f12",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            color: "var(--text)",
-            padding: "6px 8px",
+            background: "#08080c",
+            border: "1px solid #2a2a32",
+            borderRadius: 8,
+            color: "#fcfcfc",
+            fontSize: 13,
+            padding: "8px 12px",
           }}
         >
           <option value="recent">Data: mais recente</option>
           <option value="oldest">Data: mais antiga</option>
-          <option value="name">Nome: A-Z</option>
         </select>
       </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {STATUS_FILTERS.map((filter) => {
+          const active = statusFilter === filter;
+          return (
+            <button
+              key={filter}
+              onClick={() => setStatusFilter(filter)}
+              style={{
+                borderRadius: 100,
+                padding: "6px 14px",
+                fontSize: 12,
+                cursor: "pointer",
+                background: active ? "#fcfcfc" : "transparent",
+                color: active ? "#0a0a13" : "#a3a3b3",
+                border: active ? "none" : "1px solid #2a2a32",
+              }}
+            >
+              {filter}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
+  if (clips === null) {
+    return (
+      <div>
+        {header}
+        <VideoGridSkeleton />
+      </div>
+    );
+  }
+
+  if (error && clips.length === 0) {
+    return (
+      <div>
+        {header}
+        <p className="error-text">{error}</p>
+      </div>
+    );
+  }
+
+  if (clips.length === 0) {
+    return (
+      <div>
+        {header}
+        <p className="empty-state">Nenhum clipe gerado ainda.</p>
+      </div>
+    );
+  }
+
+  const sortedClips = [...clips].sort((a, b) => {
+    const aTime = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
+    const bTime = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
+    return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
+  });
+  const filteredClips = sortedClips.filter(
+    (clip) => filterBucket(clip, processingIds.has(clip.itemId)) === statusFilter
+  );
+
+  return (
+    <div>
+      {header}
+      {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
+      {filteredClips.length === 0 ? (
+        <p className="empty-state">Nenhum clipe com status &quot;{statusFilter}&quot;.</p>
+      ) : (
       <div className="video-grid">
-        {sortedClips.map((clip) => {
+        {filteredClips.map((clip) => {
           const isProcessing = processingIds.has(clip.itemId);
           const status = clipStatus(clip, isProcessing);
           return (
@@ -520,6 +603,7 @@ export default function VideoLibrary() {
           );
         })}
       </div>
+      )}
       {cuttingClip && (
         <CutModal
           clip={cuttingClip}
