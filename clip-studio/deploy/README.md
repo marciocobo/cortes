@@ -112,21 +112,45 @@ it) and copies it to a per-submission scratch file
 the master is never touched. Verified live: after this fix, the master
 stayed at 27 lines through a full real 4K download (4.15GB, `tK2Ex5wo4mU`).
 
-**Known trade-off, accepted knowingly:** cookies still expire/get
-invalidated and need periodic manual refresh (same export-and-`scp` steps
-below), and this uses a real Google account's session for automated
+**Known trade-off (2026-08-26), superseded 2026-08-27 by `cookie-refresher`
+(see below):** cookies still expire/get invalidated and need periodic manual
+refresh, and this uses a real Google account's session for automated
 downloads — keep volume reasonable. The node's format selection matches the
 user's own manual `yt-dlp` preset (4K-first, mp4, embedded
 thumbnail/metadata): `bestvideo[height>=2160][ext=mp4]+bestaudio[ext=m4a]/
 .../bv*+ba/b`, plus `--embed-thumbnail --add-metadata`.
 
-**To refresh the master cookies file when it expires/gets invalidated:**
+**Manual cookie refresh no longer needed in the common case (2026-08-27).**
+Confirmed live in production on 2026-08-27 that the manual refresh below was
+a real, recurring problem, not a hypothetical one (execution #602, a real
+Uploader submission, failed with `Sign in to confirm you're not a bot`
+because the master cookie had already gone stale). Fixed with a new
+standalone service, `cookie-refresher/` (repo root, sibling to
+`clip-studio/`) — see `cookie-refresher/deploy/README.md` and
+`openspec/changes/add-youtube-cookie-refresher/` for the full design. In
+short: it holds one persistent, already-authenticated Chromium profile and
+periodically re-exports its current session cookies directly to
+`youtube-cookies.master.txt`; the `Baixar Video YouTube` node here now also
+calls it reactively (via `POST http://cookie-refresher-1:4600/refresh`) and
+retries once whenever it hits the exact bot-check failure signature — see
+that node's `command` parameter. **The manual steps below are now only
+needed for the profile's one-time (or rare re-login) setup — see
+`cookie-refresher/deploy/README.md` §2 — not for routine refreshes.**
+
+**One-time (or rare re-login) profile setup, via `cookie-refresher`:**
 1. On a machine logged into the YouTube account to use, export cookies in
    Netscape format (e.g. the "Get cookies.txt LOCALLY" browser extension —
    must be on youtube.com, logged in, when exporting; a file with only a
    few lines / no `.youtube.com` entries means it exported empty).
-2. Copy it to the VPS via `scp`, then `docker cp` into the container as the
-   master (not through git — it's a live session credential):
+2. POST that file's content to `cookie-refresher`'s bootstrap endpoint
+   instead of copying it directly into the n8n container — see
+   `cookie-refresher/deploy/README.md` §2 for the exact command and how to
+   confirm it worked.
+
+The old direct-copy procedure (export → `scp` → `docker cp` straight into
+`youtube-cookies.master.txt`) still works as a manual fallback if
+`cookie-refresher` itself is down, but should not be needed routinely
+anymore:
    ```bash
    scp cookies.txt root@109.123.250.135:/tmp/youtube-cookies-master.txt
    ssh root@109.123.250.135 "docker exec -u root n8n-n8n-1 rm -f /home/node/.n8n-files/youtube-cookies.master.txt && \

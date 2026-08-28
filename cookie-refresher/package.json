@@ -1,0 +1,15 @@
+{
+  "name": "cookie-refresher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal-only service that keeps the YouTube session cookie used by the Clip Studio ingestion pipeline (yt-dlp) alive without manual re-export/re-copy.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "playwright": "1.47.0"
+  }
+}

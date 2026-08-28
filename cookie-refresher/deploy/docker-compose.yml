@@ -1,0 +1,43 @@
+# cookie-refresher deployment stack for the Contabo VPS documented in VPS.md.
+# Internal-only service: no published port, no Caddy route. Joins the shared
+# `n8n_default` network so the "Clip Studio — Integração N8N" workflow
+# (mfqp4D5HKs0MNhv1, node "Baixar Video YouTube") can reach it by container
+# name, and bind-mounts the SAME host directory n8n already uses for
+# /home/node/.n8n-files so it writes directly to the existing master cookie
+# path — see openspec/changes/add-youtube-cookie-refresher/design.md.
+#
+# Deploy from /root/cookie-refresher on the VPS:
+#   docker compose -f deploy/docker-compose.yml up -d --build
+
+services:
+  cookie-refresher:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: cookie-refresher-1
+    restart: unless-stopped
+    # Runs as root inside its own container so it can chown the exported
+    # cookie file to uid/gid 1000 (the n8n container's `node` user, on the
+    # shared bind mount) after writing it. Chromium therefore also runs with
+    # --no-sandbox (set in src/refresh.js) - accepted because this service
+    # has no published port and is unreachable from outside n8n_default.
+    environment:
+      COOKIE_MASTER_PATH: /data/youtube-cookies.master.txt
+      PROFILE_DIR: /profile
+      COOKIE_UID: "1000"
+      COOKIE_GID: "1000"
+      PORT: "4600"
+    volumes:
+      - /root/n8n/n8n_files:/data
+      - cookie_refresher_profile:/profile
+    networks:
+      - n8n_default
+    # No `ports:` - reached only by container name on n8n_default, the same
+    # pattern already used by clipstudio-web-1.
+
+networks:
+  n8n_default:
+    external: true
+
+volumes:
+  cookie_refresher_profile:
