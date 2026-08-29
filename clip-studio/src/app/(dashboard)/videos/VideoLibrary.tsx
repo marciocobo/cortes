@@ -535,10 +535,7 @@ export default function VideoLibrary() {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={clip.thumbnailUrl} alt="" className="thumb" />
                 ) : (
-                  <svg className="play-icon" viewBox="0 0 24 24" fill="white">
-                    <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.5)" />
-                    <path d="M10 8l6 4-6 4V8z" />
-                  </svg>
+                  <span className="play-icon" />
                 )}
                 <span className="duration-badge">{formatDuration(clip.durationSeconds)}</span>
               </div>
@@ -589,7 +586,7 @@ export default function VideoLibrary() {
                       (handleRename/RenameModal) is untouched below, only
                       the entry point is hidden. */}
                   <button
-                    className="icon-btn"
+                    className="icon-btn icon-btn-dim"
                     onClick={() => setDeletingClip(clip)}
                     disabled={busyId === clip.itemId || isProcessing}
                     title="Excluir"

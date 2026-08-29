@@ -35,6 +35,13 @@ a {
   color: inherit;
 }
 
+h1 {
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+
 input,
 button {
   font: inherit;
@@ -172,8 +179,8 @@ button {
 
 .video-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 280px));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
 }
 
 .video-card {
@@ -196,14 +203,18 @@ button {
   display: block;
 }
 
+/* Matches the prototype's play placeholder: a plain CSS triangle (no
+   background circle) for clips without a thumbnail. */
 .video-card .play-icon {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  width: 40px;
-  height: 40px;
-  opacity: 0.85;
+  transform: translate(-40%, -50%);
+  width: 0;
+  height: 0;
+  border-top: 12px solid transparent;
+  border-bottom: 12px solid transparent;
+  border-left: 20px solid rgba(252, 252, 252, 0.55);
   pointer-events: none;
 }
 
@@ -310,6 +321,17 @@ button {
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
+}
+
+/* Prototype only dims "Excluir" - Baixar/Cortar/Renomear stay bright white,
+   scoped to .video-card so CutModal's own icon-btns (play/stop/cancel)
+   aren't affected. */
+.video-card .icon-btn {
+  color: #fcfcfc;
+}
+
+.video-card .icon-btn.icon-btn-dim {
+  color: var(--text-dim);
 }
 
 .icon-btn svg {
