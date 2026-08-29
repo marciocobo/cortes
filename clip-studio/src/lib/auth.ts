@@ -32,7 +32,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // every request with "UntrustedHost" since it can't verify the Host
   // header against a known deployment URL (Vercel-only auto-trust).
   trustHost: true,
-  session: { strategy: "jwt" },
+  // 24h instead of the Auth.js default (30 days) - after this, auth()
+  // returns null and proxy.ts (the route guard) redirects to /login on the
+  // next protected page load.
+  session: { strategy: "jwt", maxAge: 24 * 60 * 60 },
   pages: { signIn: "/login" },
   providers: [
     Credentials({
