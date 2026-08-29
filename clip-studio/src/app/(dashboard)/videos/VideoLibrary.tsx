@@ -744,6 +744,11 @@ function CutModal({
     }
   }
 
+  // Selection still covers the whole clip (0 to its current duration) -
+  // saving here would just re-encode the exact same content, wasting an
+  // ffmpeg pass and an OneDrive upload for zero visible change.
+  const isUnchanged = effectiveStart === 0 && effectiveEnd === duration;
+
   // The actual cut runs in the background after this closes the modal
   // (see handleSaveCut in VideoLibrary) - only the client-side validation
   // (end > start) happens here, synchronously.
@@ -753,6 +758,7 @@ function CutModal({
       setError("O fim deve ser maior que o início");
       return;
     }
+    if (isUnchanged) return;
     onSave(effectiveStart, effectiveEnd);
   }
 
@@ -992,7 +998,8 @@ function CutModal({
             </button>
             <button
               onClick={handleSave}
-              title="Salvar corte"
+              disabled={isUnchanged}
+              title={isUnchanged ? "Ajuste o início ou o fim para cortar" : "Salvar corte"}
               aria-label="Salvar corte"
               style={{
                 display: "inline-flex",
@@ -1006,7 +1013,8 @@ function CutModal({
                 border: "none",
                 background: "#fcfcfc",
                 color: "#0a0a13",
-                cursor: "pointer",
+                cursor: isUnchanged ? "default" : "pointer",
+                opacity: isUnchanged ? 0.4 : 1,
               }}
             >
               <SaveIcon />
