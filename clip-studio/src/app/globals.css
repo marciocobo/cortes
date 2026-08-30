@@ -62,9 +62,9 @@ button {
 
 .field input {
   width: 100%;
-  background: #0f0f12;
+  background: #0a0a13;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   color: var(--text);
   padding: 10px 12px;
 }
@@ -136,9 +136,9 @@ button {
    the prototype (BIBLIOTECA / AUTOMAÇÃO / ADMINISTRAÇÃO). */
 .eyebrow {
   font-family: var(--font-mono), monospace;
-  font-weight: 600;
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
+  font-weight: 400;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   color: var(--accent-blue);
   text-transform: uppercase;
   margin: 0 0 4px;
@@ -173,14 +173,56 @@ button {
 
 .main {
   flex: 1;
-  padding: 24px;
+  min-width: 0;
+  padding: 72px 24px 24px;
   max-width: 1100px;
+  transition: margin-left 0.2s ease;
 }
 
+.main-shifted {
+  margin-left: 240px;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Below this width, pushing 240px of content over leaves too little room
+   (forces horizontal scroll, crushes cards) - switch to a classic overlay
+   drawer instead: sidebar sits on top of a dimmed backdrop, content never
+   moves. Above it, content keeps shifting to match the prototype. */
+@media (max-width: 720px) {
+  .main-shifted {
+    margin-left: 0;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+  }
+}
+
+/* Fixed column count keyed to viewport width (not container width) so
+   opening/closing the push-menu - which shrinks .main's available width -
+   never flips the column count and resizes the cards mid-transition. */
 .video-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .video-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 540px) {
+  .video-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .video-card {
@@ -401,25 +443,56 @@ th {
   text-align: center;
 }
 
+.hamburger-btn {
+  display: flex;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 60;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  background: #08080c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.app-shell {
+  flex-direction: column;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 50;
+  width: 240px;
+  flex-direction: column;
+  align-items: stretch;
+  transform: translateX(-100%);
+  transition: transform 0.2s ease;
+  border-right: 1px solid var(--border);
+  border-bottom: none;
+  padding: 24px 20px;
+  background: var(--panel);
+}
+
+.sidebar.sidebar-open {
+  transform: translateX(0);
+}
+
+.sidebar .logo {
+  margin-left: 44px;
+}
+
+.sidebar nav {
+  flex-direction: column;
+}
+
 @media (max-width: 720px) {
-  .app-shell {
-    flex-direction: column;
-  }
-  .sidebar {
-    width: 100%;
-    flex-direction: row;
-    overflow-x: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    align-items: center;
-  }
-  .sidebar .logo,
-  .sidebar .user-box {
-    display: none;
-  }
-  .sidebar nav {
-    flex-direction: row;
-  }
   table,
   thead,
   tbody,

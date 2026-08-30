@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import Sidebar from "./Sidebar";
+import DashboardShell from "./DashboardShell";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -8,8 +8,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="app-shell">
-      <Sidebar role={session.user.role} name={session.user.name} />
-      <main className="main">{children}</main>
+      <DashboardShell role={session.user.role} name={session.user.name}>
+        {children}
+      </DashboardShell>
     </div>
   );
 }

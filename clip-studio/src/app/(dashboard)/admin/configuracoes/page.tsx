@@ -8,7 +8,7 @@ export default async function ConfiguracoesPage() {
     <div>
       <p className="eyebrow">Administração</p>
       <h1 style={{ marginTop: 0 }}>Configurações</h1>
-      <div className="card" style={{ padding: 24, maxWidth: 480, marginBottom: 32 }}>
+      <div className="card" style={{ padding: 24, maxWidth: 560, marginBottom: 32 }}>
         <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Webhook N8N</h2>
         <N8nConfigForm />
       </div>
