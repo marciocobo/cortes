@@ -138,7 +138,10 @@ function formatSize(bytes: number | null) {
 
 function formatDate(iso: string | null) {
   if (!iso) return null;
-  return new Date(iso).toLocaleDateString("pt-BR");
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 // video-library spec: "Clip status indicator" - "Rascunho" has no backend
@@ -542,7 +545,7 @@ export default function VideoLibrary() {
               <div className="body">
                 <p className="name">{clip.hook || clip.name}</p>
                 <p className="meta">
-                  {[formatSize(clip.sizeBytes), formatDate(clip.modifiedAt)].filter(Boolean).join(" · ")}
+                  {[formatSize(clip.sizeBytes), formatDate(clip.createdAt)].filter(Boolean).join(" · ")}
                   {clip.submittedByName && (
                     <>
                       <br />
@@ -550,7 +553,12 @@ export default function VideoLibrary() {
                     </>
                   )}
                 </p>
-                <span className={`clip-status-pill ${status.className}`}>{status.label}</span>
+                <div className="clip-status-row">
+                  <span className={`clip-status-pill ${status.className}`}>{status.label}</span>
+                  {clip.edited && clip.modifiedAt && (
+                    <span className="clip-status-date">{formatDate(clip.modifiedAt)}</span>
+                  )}
+                </div>
                 <div className="actions">
                   {clip.downloadUrl && (
                     <a

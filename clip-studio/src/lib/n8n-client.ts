@@ -24,6 +24,7 @@ export type ClipSummary = {
   hook: string | null;
   reason: string | null;
   sizeBytes: number | null;
+  createdAt: string | null;
   modifiedAt: string | null;
   edited: boolean;
   submittedByName: string | null;
@@ -270,6 +271,7 @@ export async function listClips(): Promise<ClipSummary[]> {
         hook: meta?.hook ?? null,
         reason: meta?.reason ?? null,
         sizeBytes: mp4.size ?? null,
+        createdAt: mp4.createdDateTime ?? null,
         modifiedAt: mp4.lastModifiedDateTime ?? null,
         edited,
         videoSource: meta?.videoSource ?? null,

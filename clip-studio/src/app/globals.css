@@ -312,13 +312,25 @@ button {
 /* Clip status badge (Original/Rascunho/Cortado) - outline pill matching
    the prototype's {{v.status}} badge, distinct from the filled
    submission-status .pill variants above. */
+.clip-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
 .clip-status-pill {
   display: inline-block;
   font-size: 0.7rem;
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 2px 10px;
-  margin-top: 6px;
+}
+
+.clip-status-date {
+  font-size: 0.75rem;
+  color: var(--text-dim);
 }
 
 .clip-status-original {
