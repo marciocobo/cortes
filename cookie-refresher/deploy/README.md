@@ -60,12 +60,42 @@ far less often afterward:
 3. Confirm the response is `{"ok":true,"cookieCount":N}` with `N > 0`, and
    that `/root/n8n/n8n_files/youtube-cookies.master.txt` now exists,
    `chown 1000:1000`, `chmod 400`.
+4. **Mandatory — do not stop at step 3.** `{"ok":true}` only means the
+   cookie *looked* logged-in to the Playwright profile; it does not prove a
+   real `yt-dlp` download will work (confirmed the hard way on 2026-08-31 —
+   see `openspec/changes/harden-youtube-cookie-refresh-validation/`, a
+   bootstrap reported `ok:true` and the very next download still failed
+   with a rotated-cookie error). Validate end-to-end before considering the
+   incident closed:
+   ```bash
+   docker exec n8n-n8n-1 sh -c '
+     cp /home/node/.n8n-files/youtube-cookies.master.txt /tmp/test-cookies.txt
+     chmod 600 /tmp/test-cookies.txt
+     /home/node/.n8n-files/yt-dlp --no-playlist --cookies /tmp/test-cookies.txt \
+       --js-runtimes node:/usr/local/bin/node --simulate \
+       -f "bestvideo[height>=2160][ext=mp4]+bestaudio[ext=m4a]/best" \
+       "https://www.youtube.com/watch?v=<VIDEO_ID>" 2>&1 | tail -30
+     rm -f /tmp/test-cookies.txt
+   '
+   ```
+   Only trust the fix once this prints a real `[info] ...: Downloading N
+   format(s): ...` line, with **no** `ERROR: ... Sign in to confirm` and
+   **no** `WARNING: ... cookies are no longer valid`. If it still fails,
+   re-export `cookies.txt` immediately (close other tabs/windows logged
+   into that YouTube account first, to reduce the chance the `SIDCC`-family
+   cookies rotate again before you finish) and repeat from step 2 — don't
+   assume a second bootstrap will succeed just because the first one's
+   response looked fine.
 
 From this point on, `/refresh` (called by the daily cron and by the n8n
 workflow's retry logic) keeps the same persistent profile alive without
 ever repeating this step — until the underlying Google session actually
 dies for good, which should be far rarer than the previous per-download
-cookie rotation.
+cookie rotation. **In practice (as of 2026-08-31) the session can still go
+stale unattended within about a day**, so treat step 4's validation as
+something to re-run proactively, not just after a reported failure, until
+the permanent automated fix (tracked in
+`openspec/changes/harden-youtube-cookie-refresh-validation/`) lands.
 
 ## 3. Failure modes to recognize
 

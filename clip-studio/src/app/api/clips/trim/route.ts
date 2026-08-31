@@ -10,6 +10,7 @@ const bodySchema = z
     newStartSec: z.number().min(0),
     newEndSec: z.number(),
     currentClipDurationSec: z.number().min(0),
+    removeSilence: z.boolean().optional().default(false),
   })
   .refine((b) => b.newEndSec > b.newStartSec, {
     message: "O fim deve ser maior que o início",
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
   try {
     await requireCapability("videoLibrary");
     const body = bodySchema.parse(await request.json());
-    const result = await trimClip(body.itemId, body.newStartSec, body.newEndSec);
+    const result = await trimClip(body.itemId, body.newStartSec, body.newEndSec, body.removeSilence);
     return NextResponse.json({ ok: true, durationSeconds: result.durationSeconds });
   } catch (err) {
     return toErrorResponse(err);

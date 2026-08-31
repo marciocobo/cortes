@@ -41,7 +41,7 @@ The system SHALL let a Clipador or Admin download the original clip file for any
 - **THEN** the system streams the clip file to the user's browser
 
 ### Requirement: Trim (re-cut) clip
-The system SHALL let a Clipador or Admin manually re-cut a clip's start/end within the clip's own current duration (shortening it), persisting the new boundaries to the clip's `.mp4` and `_meta.json`.
+The system SHALL let a Clipador or Admin manually re-cut a clip's start/end within the clip's own current duration (shortening it), optionally also removing silent segments detected within that selected range (a "jump cut"), persisting the result to the clip's `.mp4` and `_meta.json`.
 
 #### Scenario: Trim succeeds
 - **WHEN** a Clipador selects a new start/end within the clip's current duration and confirms "Salvar corte"
@@ -58,6 +58,22 @@ The system SHALL let a Clipador or Admin manually re-cut a clip's start/end with
 #### Scenario: Cancel discards changes
 - **WHEN** a Clipador opens the cut modal, adjusts the sliders, and clicks "Cancelar"
 - **THEN** the system closes the modal without modifying the clip
+
+#### Scenario: Silence removal is off by default
+- **WHEN** a Clipador opens the cut modal
+- **THEN** the "Remover silêncios (Jump Cut)" option starts unchecked, and saving the trim without checking it produces exactly the same result as before this capability existed (a plain start/end cut, no segments removed)
+
+#### Scenario: Silence removal cuts out silent segments across the selected range
+- **WHEN** a Clipador checks "Remover silêncios (Jump Cut)" and confirms "Salvar corte"
+- **THEN** the system detects silent segments throughout the selected `[start, end)` range and removes both the video and audio of each one from the saved clip (a real jump cut, not just muting audio under unchanged video), keeping brief padding around each cut so speech is not clipped, and the clip's duration shown in the library reflects the actual shorter output, not the selected range's raw length
+
+#### Scenario: Selected range with no silence is unaffected by the toggle
+- **WHEN** a Clipador checks "Remover silêncios (Jump Cut)" but the selected range contains no silent segment long enough to qualify
+- **THEN** the saved clip is the same as a plain trim of that range — nothing is removed
+
+#### Scenario: Selected range is almost entirely silent
+- **WHEN** a Clipador checks "Remover silêncios (Jump Cut)" on a selected range where silence removal would leave little to no speech content
+- **THEN** the system rejects the trim with a clear error instead of saving a near-empty or empty clip
 
 ### Requirement: Clip status indicator
 The system SHALL show a status indicator on each clip card: `Original` when the clip has never been manually trimmed, `Cortado` once a trim has been saved for that clip, and `Rascunho` while the Clipador has an unsaved trim selection open for that clip on the current device.

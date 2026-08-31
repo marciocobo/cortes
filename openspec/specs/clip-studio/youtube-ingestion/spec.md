@@ -16,7 +16,7 @@ The system SHALL let an Uploader or Admin submit a YouTube video URL and a title
 - **THEN** the system rejects the submission with a clear error and does not create a submission record
 
 ### Requirement: Downloads run one at a time, in submission order
-The system SHALL download submitted videos sequentially — never more than one download in progress at a time — processing queued submissions in the order they were submitted, so videos land in the pipeline's input folder one by one, the same way a manual upload would today.
+The system SHALL download submitted videos sequentially — never more than one download in progress at a time — processing queued submissions in queue order (a submission's `Na fila` position is determined by when it most recently entered the queue, whether from first submission or from a later reprocess), so videos land in the pipeline's input folder one by one, the same way a manual upload would today.
 
 #### Scenario: Second submission waits for the first
 - **WHEN** an Uploader submits a second link while an earlier submission is still `Baixando`
@@ -25,6 +25,10 @@ The system SHALL download submitted videos sequentially — never more than one 
 #### Scenario: A failed download does not block the queue
 - **WHEN** a queued submission's download ends in error
 - **THEN** the system immediately starts the next `Na fila` submission's download instead of waiting or stopping the queue
+
+#### Scenario: A reprocessed submission queues behind submissions already waiting
+- **WHEN** a submission is reprocessed (see "Reprocess a failed submission") while one or more other submissions are already `Na fila`
+- **THEN** the reprocessed submission's download starts only after those already-queued submissions have been processed, not ahead of them
 
 ### Requirement: Download hands off to the existing pipeline unchanged
 The system SHALL fetch the submitted video and place it into the same OneDrive folder (`Videos-Cortes`) that the n8n pipeline already scans, without adding, removing, or reconfiguring any node in the existing "Blocos" pipeline workflow — the pipeline continues to discover, lock, and process videos exactly as it does today, regardless of how the file arrived in that folder.
@@ -62,6 +66,36 @@ The system SHALL show a history table of past submissions (video, link, submitte
 #### Scenario: Admin sees every submission
 - **WHEN** an Admin views the submission history
 - **THEN** the system shows submissions from every user, with the submitter identified per row
+
+### Requirement: Reprocess a failed submission
+The system SHALL let the Uploader who created a submission, or an Admin, reprocess any submission whose status is `Erro` by re-queuing it for download without requiring re-entry of its title or link.
+
+#### Scenario: Reprocess re-queues the same submission
+- **WHEN** the Uploader who created an `Erro` submission (or an Admin) triggers reprocess on it
+- **THEN** the system sets that submission's status to `Na fila`, using the same submission record (same title, link, and identity) rather than creating a new one
+
+#### Scenario: Reprocess is only available on failed submissions
+- **WHEN** a submission's status is `Na fila`, `Baixando`, `Processando`, or `Concluído`
+- **THEN** the system does not offer a reprocess action for that submission
+
+#### Scenario: Another Uploader cannot reprocess someone else's submission
+- **WHEN** an Uploader (not Admin) attempts to reprocess an `Erro` submission created by a different user
+- **THEN** the system rejects the action
+
+### Requirement: Submission attempt history
+The system SHALL preserve a record of each failed attempt on a submission — its status, error reason, and when it occurred — whenever that submission is reprocessed, so earlier failure reasons remain visible after a later attempt changes the submission's current status.
+
+#### Scenario: Reprocessing snapshots the failed attempt before re-queuing
+- **WHEN** a submission with status `Erro` and a recorded error reason is reprocessed
+- **THEN** the system records that status, error reason, and timestamp as a past attempt before changing the submission's status to `Na fila`
+
+#### Scenario: Uploader or Admin views a submission's attempt history
+- **WHEN** the Uploader who created a submission (or an Admin) opens that submission's attempt history from the submission history table
+- **THEN** the system shows every recorded past attempt for that submission, each with its timestamp and error reason, ordered most recent first
+
+#### Scenario: A submission with no past failures has an empty history
+- **WHEN** a submission has never been reprocessed
+- **THEN** its attempt history contains no past-attempt entries (only its current, in-progress state applies)
 
 ### Requirement: No webhook configuration on the Uploader screen
 The Uploader's submission screen SHALL NOT expose the N8N webhook URL or any other pipeline configuration field; that configuration is Admin-only (see `clip-studio/admin-console`).

@@ -42,6 +42,12 @@ class N8nNotConfiguredError extends Error {
 const MAX_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 500;
 const WEBHOOK_TIMEOUT_MS = 20_000;
+// Trim is synchronous end-to-end (responseMode: "responseNode" - n8n only
+// answers once the whole cut is done), and unlike the other webhooks it can
+// involve two full ffmpeg re-encodes (the plain cut, then the jump-cut pass
+// when removeSilence is on) plus a silencedetect scan - the default 20s
+// budget was already tight for a single encode and is not enough for both.
+const TRIM_WEBHOOK_TIMEOUT_MS = 180_000;
 const META_FETCH_TIMEOUT_MS = 10_000;
 
 function sleep(ms: number) {
@@ -62,7 +68,7 @@ function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Pr
  * error to the user. Does not retry 4xx (bad request/auth) - those won't
  * succeed on retry.
  */
-async function callWebhook<T>(path: string, body: unknown): Promise<T> {
+async function callWebhook<T>(path: string, body: unknown, timeoutMs = WEBHOOK_TIMEOUT_MS): Promise<T> {
   const config = await getAppConfig();
   if (!config.n8nIngestWebhookUrl) {
     throw new N8nNotConfiguredError();
@@ -85,7 +91,7 @@ async function callWebhook<T>(path: string, body: unknown): Promise<T> {
       const res = await fetchWithTimeout(
         url,
         { method: "POST", headers, body: payload },
-        WEBHOOK_TIMEOUT_MS
+        timeoutMs
       );
 
       if (res.ok) {
@@ -326,18 +332,23 @@ async function cacheClipDuration(itemId: string, durationSeconds: number): Promi
 export async function trimClip(
   itemId: string,
   newStartSec: number,
-  newEndSec: number
+  newEndSec: number,
+  removeSilence = false
 ): Promise<{ durationSeconds: number }> {
   try {
-    const result = await callWebhook<{ durationSeconds: number }>("clip-studio/clips/trim", {
-      itemId,
-      newStartSec,
-      newEndSec,
-    });
-    // A successful trim always cuts to exactly [newStartSec, newEndSec) -
-    // n8n already validated that range against ffprobe before cutting, so
-    // this is real, not a guess.
-    await cacheClipDuration(itemId, newEndSec - newStartSec).catch(() => {
+    const result = await callWebhook<{ durationSeconds: number }>(
+      "clip-studio/clips/trim",
+      { itemId, newStartSec, newEndSec, removeSilence },
+      TRIM_WEBHOOK_TIMEOUT_MS
+    );
+    // n8n always ffprobe-measures the real output file and returns that as
+    // durationSeconds - never the algebraic (newEndSec - newStartSec).
+    // Those two only coincide when removeSilence is off; with it on, the
+    // real output is shorter, and caching the algebraic value here would
+    // silently defeat the whole point of the feature (see
+    // openspec/changes/add-clip-trim-silence-removal/design.md - "Duration
+    // reporting").
+    await cacheClipDuration(itemId, result.durationSeconds).catch(() => {
       // Caching is a best-effort optimization for the library grid - never
       // let a DB hiccup turn an otherwise-successful trim into an error.
     });
@@ -371,4 +382,16 @@ export async function triggerIngestion(params: {
   title: string;
 }): Promise<void> {
   await callWebhook("clip-studio/ingest", params);
+}
+
+/**
+ * Runs the real end-to-end yt-dlp probe against the current
+ * youtube-cookies.master.txt (n8n workflow "Validar Cookie YouTube") - see
+ * admin-console spec, "YouTube cookie re-bootstrap". A cookie-refresher
+ * `/bootstrap` success alone does not mean a real download will work (see
+ * openspec/changes/harden-youtube-cookie-refresh-validation) - this is the
+ * same real-download check that gap analysis established as necessary.
+ */
+export async function validateYoutubeCookie(): Promise<{ ok: boolean; detail: string }> {
+  return callWebhook("clip-studio/youtube-cookie/validate", {});
 }

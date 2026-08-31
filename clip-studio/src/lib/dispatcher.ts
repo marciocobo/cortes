@@ -17,7 +17,7 @@ export async function dispatchNextIfIdle(): Promise<void> {
 
   const next = await prisma.submission.findFirst({
     where: { status: "FILA" },
-    orderBy: { createdAt: "asc" },
+    orderBy: { queuedAt: "asc" },
   });
   if (!next) return;
 

@@ -268,7 +268,12 @@ export default function VideoLibrary() {
   // the card "Processando", and let this fetch run in the background -
   // `load()` on success naturally flips the card to "Cortado" via the
   // meta.json `edited` flag n8n's own workflow already sets.
-  function handleSaveCut(clip: ClipSummary, newStartSec: number, newEndSec: number) {
+  function handleSaveCut(
+    clip: ClipSummary,
+    newStartSec: number,
+    newEndSec: number,
+    removeSilence: boolean
+  ) {
     clearDraft(clip.itemId);
     setCuttingClip(null);
     setProcessingIds((prev) => new Set(prev).add(clip.itemId));
@@ -280,6 +285,7 @@ export default function VideoLibrary() {
         newStartSec,
         newEndSec,
         currentClipDurationSec: clip.durationSeconds ?? 0,
+        removeSilence,
       }),
     })
       .then((res) => res.json().then((data) => ({ res, data })))
@@ -613,7 +619,9 @@ export default function VideoLibrary() {
         <CutModal
           clip={cuttingClip}
           onClose={() => setCuttingClip(null)}
-          onSave={(newStartSec, newEndSec) => handleSaveCut(cuttingClip, newStartSec, newEndSec)}
+          onSave={(newStartSec, newEndSec, removeSilence) =>
+            handleSaveCut(cuttingClip, newStartSec, newEndSec, removeSilence)
+          }
         />
       )}
       {renamingClip && (
@@ -648,7 +656,7 @@ function CutModal({
 }: {
   clip: ClipSummary;
   onClose: () => void;
-  onSave: (newStartSec: number, newEndSec: number) => void;
+  onSave: (newStartSec: number, newEndSec: number, removeSilence: boolean) => void;
 }) {
   const duration = clip.durationSeconds ?? 0;
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -659,6 +667,10 @@ function CutModal({
   const [currentTime, setCurrentTime] = useState(0);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // video-library spec: "Trim (re-cut) clip" - "Silence removal is off by
+  // default" / "Silence removal cuts out silent segments across the
+  // selected range". Off by default, matches the mockup's toggle.
+  const [removeSilence, setRemoveSilence] = useState(false);
 
   // The modal opens instantly with whatever duration is already in memory
   // (see handleOpenCut) and a background refresh may correct `duration`
@@ -752,10 +764,17 @@ function CutModal({
     }
   }
 
-  // Selection still covers the whole clip (0 to its current duration) -
-  // saving here would just re-encode the exact same content, wasting an
-  // ffmpeg pass and an OneDrive upload for zero visible change.
-  const isUnchanged = effectiveStart === 0 && effectiveEnd === duration;
+  // Selection still covers the whole clip (0 to its current duration) AND
+  // silence removal is off - saving here would just re-encode the exact
+  // same content, wasting an ffmpeg pass and an OneDrive upload for zero
+  // visible change. With removeSilence on, even the full range is a real
+  // action (it can still remove silent segments), so it's never "unchanged".
+  const isUnchanged = !removeSilence && effectiveStart === 0 && effectiveEnd === duration;
+
+  function handleToggleRemoveSilence() {
+    setRemoveSilence((v) => !v);
+    saveDraft(clip.itemId);
+  }
 
   // The actual cut runs in the background after this closes the modal
   // (see handleSaveCut in VideoLibrary) - only the client-side validation
@@ -767,7 +786,7 @@ function CutModal({
       return;
     }
     if (isUnchanged) return;
-    onSave(effectiveStart, effectiveEnd);
+    onSave(effectiveStart, effectiveEnd, removeSilence);
   }
 
   const fillStart = duration > 0 ? (effectiveStart / duration) * 100 : 0;
@@ -955,6 +974,54 @@ function CutModal({
         >
           <span>Início: {formatTime(effectiveStart)}</span>
           <span>Fim: {formatTime(effectiveEnd)}</span>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 20,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>Remover silêncios (Jump Cut)</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+              Corta automaticamente os trechos sem fala no vídeo inteiro
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={removeSilence}
+            aria-label="Remover silêncios (Jump Cut)"
+            onClick={handleToggleRemoveSilence}
+            style={{
+              position: "relative",
+              width: 40,
+              height: 22,
+              flexShrink: 0,
+              borderRadius: 999,
+              border: "none",
+              background: removeSilence ? "#6199f6" : "var(--border)",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                top: 2,
+                left: removeSilence ? 20 : 2,
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: "#fcfcfc",
+                transition: "left 0.15s",
+              }}
+            />
+          </button>
         </div>
 
         {error && (

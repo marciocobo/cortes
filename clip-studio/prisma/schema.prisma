@@ -47,10 +47,33 @@ model Submission {
   submittedById  String
   submittedBy    User             @relation(fields: [submittedById], references: [id])
   createdAt      DateTime         @default(now())
+  // Queue order key, distinct from createdAt so a reprocessed submission
+  // queues at the back instead of jumping ahead of submissions that
+  // arrived later but haven't downloaded yet - see youtube-ingestion spec,
+  // "Downloads run one at a time, in submission order" and
+  // add-submission-reprocess-history/design.md - Decisions - Queue ordering.
+  queuedAt       DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
+
+  attempts SubmissionAttempt[]
 
   @@index([status, createdAt])
   @@index([submittedById])
+}
+
+// Snapshot of a submission's failed state, taken right before a reprocess
+// overwrites Submission.status/errorReason - see youtube-ingestion spec,
+// "Submission attempt history". Only written on reprocess, not on every
+// Erro transition (see design.md for why).
+model SubmissionAttempt {
+  id           String           @id @default(cuid())
+  submissionId String
+  submission   Submission       @relation(fields: [submissionId], references: [id])
+  status       SubmissionStatus
+  errorReason  String?
+  occurredAt   DateTime
+
+  @@index([submissionId, occurredAt])
 }
 
 // Single-row key/value config table (n8n webhook URL + secret, download stuck-threshold, etc).
