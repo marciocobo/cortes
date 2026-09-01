@@ -375,6 +375,28 @@ button {
   background: transparent;
   color: var(--text-dim);
   cursor: pointer;
+  /* Mobile browsers paint a rectangular tap-highlight over rounded
+     buttons like this one on every tap - visually a square flashing
+     around a circle. Suppress it and, for keyboard users only
+     (:focus-visible, not plain tap/:focus), draw a circular ring
+     instead of the browser's default rectangular outline. */
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.icon-btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-blue);
+}
+
+/* Same rectangular-tap-highlight-on-a-circle issue as .icon-btn above,
+   for the CutModal's round drag handles. */
+[role="slider"] {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+[role="slider"]:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-blue);
 }
 
 /* Prototype only dims "Excluir" - Baixar/Cortar/Renomear stay bright white,

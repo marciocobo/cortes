@@ -125,10 +125,14 @@ function formatDuration(seconds: number | null) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// video-library spec: "Trim (re-cut) clip" - "Sub-second cut is selectable".
+// Rounds to 1 decimal place before splitting into minutes/seconds so a
+// value like 119.96 formats as "2:00.0", not "1:60.0".
 function formatTime(seconds: number) {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  const rounded = Math.round(seconds * 10) / 10;
+  const m = Math.floor(rounded / 60);
+  const s = rounded - m * 60;
+  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
 }
 
 function formatSize(bytes: number | null) {
@@ -644,6 +648,27 @@ export default function VideoLibrary() {
   );
 }
 
+// video-library spec: "Trim (re-cut) clip" - "Sub-second cut is
+// selectable" - drag/keyboard/stepper nudges all move in this increment.
+const TRIM_STEP_SEC = 0.1;
+
+// The preview's max height used to be a flat "55svh", which ignored
+// everything ELSE stacked in the modal (title, time labels, track,
+// Início/Fim + stepper row, the silence toggle, footer buttons - roughly
+// 350-400px of fixed-height chrome). On shorter phone screens that left
+// less room than the video actually claimed, so the modal grew taller
+// than the visible viewport and scrolled internally. clamp() sizes the
+// video from the space actually left over after that chrome (100svh minus
+// a fixed budget for it), never below a still-usable 180px, and never
+// above the original 55svh cap on tall/desktop viewports.
+const CUT_PREVIEW_MAX_HEIGHT = "clamp(180px, calc(100svh - 400px), 55svh)";
+
+// Rounds to the nearest 0.1s and away from float drift (e.g. repeated
+// +0.1 nudges accumulating to 0.30000000000000004).
+function roundToStep(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 // video-library spec: "Trim (re-cut) clip" - matches the prototype's
 // "Cortar vídeo" modal. Sliders go from 0 to the clip's OWN current
 // duration (this can only shorten an already-produced clip, not pull in
@@ -680,14 +705,52 @@ function CutModal({
   // cascading-render setState-in-effect anti-pattern.
   const effectiveStart = Math.min(trimStart, duration);
   const effectiveEnd = Math.min(trimEnd, duration);
+  const pendingSeekRef = useRef<number | null>(null);
+  const seekRafRef = useRef<number | null>(null);
+
+  // Seeks the preview to `time` so adjusting a boundary (drag, keyboard, or
+  // the +/- stepper) shows the exact frame that boundary now lands on,
+  // instead of leaving the preview wherever it happened to be. Pauses
+  // first - scrubbing while playback continues would be confusing.
+  //
+  // The actual `video.currentTime` assignment is throttled to at most once
+  // per animation frame instead of once per call: `clip.downloadUrl` is a
+  // remote (OneDrive) stream, not a fully-buffered local file, so each seek
+  // triggers a real network fetch. A fast drag fires many pointermove
+  // events per frame, and setting currentTime on every single one queues
+  // more seeks than the browser/network can resolve - in practice the
+  // preview frame never visibly updates during the drag at all. Coalescing
+  // to one seek per frame (always the latest target) keeps the label/track
+  // UI immediate while giving each seek a real chance to complete.
+  function seekPreview(time: number) {
+    setIsPreviewPlaying(false);
+    setCurrentTime(time);
+    const video = videoRef.current;
+    if (video) video.pause();
+    pendingSeekRef.current = time;
+    if (seekRafRef.current == null) {
+      seekRafRef.current = requestAnimationFrame(() => {
+        seekRafRef.current = null;
+        const target = pendingSeekRef.current;
+        const v = videoRef.current;
+        if (v && target != null) v.currentTime = target;
+      });
+    }
+  }
 
   function handleTrimStartChange(value: number) {
-    setTrimStart(Math.min(value, effectiveEnd - 1 < 0 ? 0 : effectiveEnd - 1));
+    const maxStart = effectiveEnd - TRIM_STEP_SEC < 0 ? 0 : effectiveEnd - TRIM_STEP_SEC;
+    const next = roundToStep(Math.max(0, Math.min(value, maxStart)));
+    setTrimStart(next);
+    seekPreview(next);
     saveDraft(clip.itemId);
   }
 
   function handleTrimEndChange(value: number) {
-    setTrimEnd(Math.max(value, effectiveStart + 1 > duration ? duration : effectiveStart + 1));
+    const minEnd = effectiveStart + TRIM_STEP_SEC > duration ? duration : effectiveStart + TRIM_STEP_SEC;
+    const next = roundToStep(Math.min(duration, Math.max(value, minEnd)));
+    setTrimEnd(next);
+    seekPreview(next);
     saveDraft(clip.itemId);
   }
 
@@ -711,13 +774,25 @@ function CutModal({
 
   function handleHandlePointerMove(which: "start" | "end", e: React.PointerEvent<HTMLDivElement>) {
     if (draggingRef.current !== which) return;
-    const time = Math.round(timeFromPointerX(e.clientX));
+    const time = roundToStep(timeFromPointerX(e.clientX));
     if (which === "start") handleTrimStartChange(time);
     else handleTrimEndChange(time);
   }
 
   function handleHandlePointerUp() {
     draggingRef.current = null;
+  }
+
+  // video-library spec: "Trim handles are keyboard-operable" / "Keyboard
+  // coarse nudge" - ArrowLeft/Right move by TRIM_STEP_SEC, Shift+Arrow by
+  // a full second for fast coarse positioning before fine-tuning.
+  function handleHandleKeyDown(which: "start" | "end", e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const step = e.shiftKey ? 1 : TRIM_STEP_SEC;
+    const delta = e.key === "ArrowRight" ? step : -step;
+    if (which === "start") handleTrimStartChange(effectiveStart + delta);
+    else handleTrimEndChange(effectiveEnd + delta);
   }
 
   function handleCancel() {
@@ -754,15 +829,33 @@ function CutModal({
     setIsPreviewPlaying(false);
   }
 
-  function handleTimeUpdate() {
-    const video = videoRef.current;
-    if (!video) return;
-    setCurrentTime(video.currentTime);
-    if (video.currentTime >= effectiveEnd) {
-      video.pause();
-      setIsPreviewPlaying(false);
+  // Drives the "0:00 / 12:14" counter and the effectiveEnd auto-stop while
+  // playing. Previously this ran off the <video>'s own `timeupdate` event,
+  // but that event's firing rate is inconsistent across browsers/devices
+  // (commonly throttled to ~4/s, sometimes much less) - in practice the
+  // counter could sit at 0:00 for a while, or the whole session, even
+  // though playback was visibly progressing. requestAnimationFrame polls
+  // the video's real currentTime every frame instead, so the counter
+  // tracks actual playback position reliably regardless of how the
+  // browser paces its own timeupdate events.
+  useEffect(() => {
+    if (!isPreviewPlaying) return;
+    let raf: number;
+    function tick() {
+      const video = videoRef.current;
+      if (video) {
+        setCurrentTime(video.currentTime);
+        if (video.currentTime >= effectiveEnd) {
+          video.pause();
+          setIsPreviewPlaying(false);
+          return;
+        }
+      }
+      raf = requestAnimationFrame(tick);
     }
-  }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isPreviewPlaying, effectiveEnd]);
 
   // Selection still covers the whole clip (0 to its current duration) AND
   // silence removal is off - saving here would just re-encode the exact
@@ -815,7 +908,17 @@ function CutModal({
           padding: 20,
           maxWidth: 520,
           width: "100%",
-          maxHeight: "calc(100vh - 32px)",
+          // svh (not vh, and not dvh either) - on mobile, vh is fixed to
+          // the viewport size with the browser's own nav/address bar
+          // hidden, so when that bar is showing (e.g. right after opening
+          // the modal) the modal renders taller than what's actually
+          // visible and the bottom action row (Play/Cancelar/Salvar) gets
+          // clipped. dvh fixes that but recalculates continuously as the
+          // bar animates in/out during scroll, which made the modal's own
+          // content visibly shift/jitter while scrolling inside it. svh is
+          // the STABLE viewport size as if the bar were always showing
+          // (the smallest case) - never clips, never recalculates mid-scroll.
+          maxHeight: "calc(100svh - 32px)",
           overflowY: "auto",
           boxSizing: "border-box",
         }}
@@ -829,14 +932,13 @@ function CutModal({
           <video
             ref={videoRef}
             src={clip.downloadUrl}
-            onTimeUpdate={handleTimeUpdate}
             onPause={() => setIsPreviewPlaying(false)}
             style={{
               display: "block",
               margin: "0 auto 16px",
               width: "auto",
               maxWidth: "100%",
-              maxHeight: "55vh",
+              maxHeight: CUT_PREVIEW_MAX_HEIGHT,
               aspectRatio: "9 / 16",
               borderRadius: 8,
               background: "#000",
@@ -849,7 +951,7 @@ function CutModal({
               margin: "0 auto 16px",
               width: "auto",
               maxWidth: "100%",
-              maxHeight: "55vh",
+              maxHeight: CUT_PREVIEW_MAX_HEIGHT,
               aspectRatio: "9 / 16",
               background: "#000",
               borderRadius: 8,
@@ -917,6 +1019,7 @@ function CutModal({
               even once the cursor leaves the track bounds. */}
           <div
             role="slider"
+            tabIndex={0}
             aria-label="Início do corte"
             aria-valuemin={0}
             aria-valuemax={duration}
@@ -924,6 +1027,7 @@ function CutModal({
             onPointerDown={(e) => handleHandlePointerDown("start", e)}
             onPointerMove={(e) => handleHandlePointerMove("start", e)}
             onPointerUp={handleHandlePointerUp}
+            onKeyDown={(e) => handleHandleKeyDown("start", e)}
             style={{
               position: "absolute",
               left: `${fillStart}%`,
@@ -940,6 +1044,7 @@ function CutModal({
           />
           <div
             role="slider"
+            tabIndex={0}
             aria-label="Fim do corte"
             aria-valuemin={0}
             aria-valuemax={duration}
@@ -947,6 +1052,7 @@ function CutModal({
             onPointerDown={(e) => handleHandlePointerDown("end", e)}
             onPointerMove={(e) => handleHandlePointerMove("end", e)}
             onPointerUp={handleHandlePointerUp}
+            onKeyDown={(e) => handleHandleKeyDown("end", e)}
             style={{
               position: "absolute",
               left: `${fillStart + fillWidth}%`,
@@ -963,17 +1069,67 @@ function CutModal({
           />
         </div>
 
+        {/* video-library spec: "Sub-second precision reachable on mobile
+            without relying on drag accuracy" - a +/- 0.1s stepper next to
+            each boundary, since dragging precisely on a small touch screen
+            isn't reliable (see design.md's "Mobile precision" decision). */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
+            alignItems: "center",
             fontSize: 12,
             color: "var(--text-dim)",
             marginBottom: 20,
+            gap: 8,
           }}
         >
-          <span>Início: {formatTime(effectiveStart)}</span>
-          <span>Fim: {formatTime(effectiveEnd)}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => handleTrimStartChange(effectiveStart - TRIM_STEP_SEC)}
+              title="-0.1s"
+              aria-label="Diminuir início em 0.1s"
+              style={{ fontSize: 16, lineHeight: 1 }}
+            >
+              −
+            </button>
+            <span>Início: {formatTime(effectiveStart)}</span>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => handleTrimStartChange(effectiveStart + TRIM_STEP_SEC)}
+              title="+0.1s"
+              aria-label="Aumentar início em 0.1s"
+              style={{ fontSize: 16, lineHeight: 1 }}
+            >
+              +
+            </button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => handleTrimEndChange(effectiveEnd - TRIM_STEP_SEC)}
+              title="-0.1s"
+              aria-label="Diminuir fim em 0.1s"
+              style={{ fontSize: 16, lineHeight: 1 }}
+            >
+              −
+            </button>
+            <span>Fim: {formatTime(effectiveEnd)}</span>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => handleTrimEndChange(effectiveEnd + TRIM_STEP_SEC)}
+              title="+0.1s"
+              aria-label="Aumentar fim em 0.1s"
+              style={{ fontSize: 16, lineHeight: 1 }}
+            >
+              +
+            </button>
+          </div>
         </div>
 
         <div
@@ -1072,6 +1228,7 @@ function CutModal({
               <CloseIcon />
             </button>
             <button
+              className="icon-btn"
               onClick={handleSave}
               disabled={isUnchanged}
               title={isUnchanged ? "Ajuste o início ou o fim para cortar" : "Salvar corte"}
