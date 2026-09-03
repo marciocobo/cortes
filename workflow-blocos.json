@@ -258,7 +258,7 @@
         300
       ],
       "parameters": {
-        "command": "=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f \"{{ $json.audioPath }}\" -l pt -osrt -of \"{{ $json.srtBase }}\" -np && cat \"{{ $json.srtPath }}\""
+        "command": "=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -mc 0 -f \"{{ $json.audioPath }}\" -l pt -osrt -of \"{{ $json.srtBase }}\" -np && cat \"{{ $json.srtPath }}\""
       }
     },
     {

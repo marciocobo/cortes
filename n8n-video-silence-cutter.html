@@ -883,7 +883,7 @@ return results;`;
     {id:"b6",name:"Preparar Whisper Blocos",type:"n8n-nodes-base.code",typeVersion:2,position:[1060,300],
      parameters:{jsCode:"const c = $('Preparar Caminhos').first().json;\nconst out = $json.stdout || '';\nconst m = out.match(/DURATION:([\\d.]+)/);\nconst duration = m ? parseFloat(m[1]) : 0;\n// Threshold de silencio calibrado por video em vez de -30dB fixo: o piso de ruido ambiente varia muito\n// entre gravacoes (mic de igreja, room tone), de -13dB a -25dB em amostras reais - um threshold fixo\n// mais rigoroso que isso faz o silencedetect nunca disparar, deixando a extensao por silencio do fim\n// (e o snap do inicio) silenciosamente inoperantes. Ver CLAUDE.md, auditoria do agente clipador (29/07/2026).\nconst mv = out.match(/MEANVOL:(-?[\\d.]+)/);\nconst meanVolume = mv ? parseFloat(mv[1]) : -20;\nlet noiseThreshold = meanVolume - 12;\nif (noiseThreshold > -18) noiseThreshold = -18;\nif (noiseThreshold < -40) noiseThreshold = -40;\nconst srtBase = '/home/node/.n8n-files/transcript_full';\nreturn [{ json: { ...c, duration, noiseThreshold, srtBase, srtPath: srtBase + '.srt' } }];\n"}},
     {id:"b7",name:"Whisper.cpp Transcrever",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[1240,300],
-     parameters:{command:`=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"`}},
+     parameters:{command:`=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -mc 0 -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np && cat "{{ $json.srtPath }}"`}},
     {id:"b7b",name:"Mesclar Pausas Curtas",type:"n8n-nodes-base.code",typeVersion:2,position:[1330,300],
      parameters:{jsCode:mesclarPausasCode}},
     {id:"b8",name:"Dividir em Blocos",type:"n8n-nodes-base.code",typeVersion:2,position:[1420,300],
@@ -948,7 +948,7 @@ return results;`;
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}},
       {id:"b16",name:"Whisper.cpp Transcrever Clipe",type:"n8n-nodes-base.executeCommand",typeVersion:1,position:[2900,440],
        onError:"continueRegularOutput",
-       parameters:{command:`=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np${wordFlags} && tr 'a-zàáâãéêíóôõúç' 'A-ZÀÁÂÃÉÊÍÓÔÕÚÇ' < "{{ $json.srtPath }}" > "{{ $json.srtPath }}.tmp" && mv "{{ $json.srtPath }}.tmp" "{{ $json.srtPath }}"`}},
+       parameters:{command:`=whisper -m /home/node/.n8n-files/ggml-large-v3-turbo.bin -t 6 -mc 0 -f "{{ $json.audioPath }}" -l ${cfg.language} -osrt -of "{{ $json.srtBase }}" -np${wordFlags} && tr 'a-zàáâãéêíóôõúç' 'A-ZÀÁÂÃÉÊÍÓÔÕÚÇ' < "{{ $json.srtPath }}" > "{{ $json.srtPath }}.tmp" && mv "{{ $json.srtPath }}.tmp" "{{ $json.srtPath }}"`}},
       {id:"b17",name:"Preparar Corte Final",type:"n8n-nodes-base.code",typeVersion:2,position:[3080,440],
        onError:"continueRegularOutput",
        parameters:{jsCode:"const c = $('Loop Over Items').item.json;\nreturn [{ json: c }];\n"}}
