@@ -61,21 +61,47 @@ export default function SubmitForm() {
           placeholder="https://www.youtube.com/watch?v=..."
         />
       </div>
-      <div className="field" style={{ marginBottom: 16 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={fullWordMode}
-            onChange={(e) => setFullWordMode(e.target.checked)}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 500 }}>Modo Palavra Completa</div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={fullWordMode}
+          aria-label="Modo Palavra Completa"
+          onClick={() => setFullWordMode((v) => !v)}
+          style={{
+            position: "relative",
+            width: 40,
+            height: 22,
+            flexShrink: 0,
+            borderRadius: 999,
+            border: "none",
+            background: fullWordMode ? "#6199f6" : "var(--border)",
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: fullWordMode ? 20 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: "#fcfcfc",
+              transition: "left 0.15s",
+            }}
           />
-          Modo Palavra Completa
-        </label>
-        <p style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 4 }}>
-          Em vez de vários Shorts, gera um único clipe contínuo com a pregação
-          inteira (do início ao fim, sem abertura/avisos/dízimo/louvor/encerramento),
-          mantendo o formato original do vídeo (sem corte 9:16) e atenuando
-          música/teclado de fundo de forma aproximada.
-        </p>
+        </button>
       </div>
       {error && (
         <p className="error-text" style={{ marginBottom: 12 }}>
