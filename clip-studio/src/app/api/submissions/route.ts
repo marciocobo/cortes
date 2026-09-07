@@ -25,6 +25,9 @@ export async function GET() {
 const bodySchema = z.object({
   youtubeUrl: z.string().trim().min(1),
   title: z.string().trim().min(1, "Título não pode ser vazio"),
+  // youtube-ingestion spec: "Submit a YouTube link" - defaults to SHORTS so
+  // omitting it (or any pre-existing client) keeps today's behavior.
+  mode: z.enum(["SHORTS", "PALAVRA_COMPLETA"]).default("SHORTS"),
 });
 
 // youtube-ingestion spec: "Submit a YouTube link"
@@ -44,6 +47,7 @@ export async function POST(request: Request) {
       data: {
         youtubeUrl: body.youtubeUrl,
         title: body.title,
+        mode: body.mode,
         submittedById: user.id,
         status: "FILA",
       },

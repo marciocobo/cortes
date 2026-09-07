@@ -553,6 +553,14 @@ export default function VideoLibrary() {
                 <span className="duration-badge">{formatDuration(clip.durationSeconds)}</span>
               </div>
               <div className="body">
+                {clip.isFullWord && (
+                  <span
+                    className="clip-status-pill"
+                    style={{ marginBottom: 4, display: "inline-block", background: "#6199f6", color: "#0a0a13" }}
+                  >
+                    Palavra Completa
+                  </span>
+                )}
                 <p className="name">{clip.hook || clip.name}</p>
                 <p className="meta">
                   {[formatSize(clip.sizeBytes), formatDate(clip.createdAt)].filter(Boolean).join(" · ")}

@@ -24,6 +24,15 @@ enum SubmissionStatus {
   ERRO
 }
 
+// See openspec/changes/add-full-word-extraction-mode - Palavra Completa mode
+// routes a submission to a separate n8n pipeline instead of "Blocos", never
+// both. SHORTS is the default so every pre-existing Submission row keeps
+// today's behavior without a backfill.
+enum SubmissionMode {
+  SHORTS
+  PALAVRA_COMPLETA
+}
+
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -41,6 +50,7 @@ model Submission {
   id             String           @id @default(cuid())
   youtubeUrl     String
   title          String
+  mode           SubmissionMode   @default(SHORTS)
   status         SubmissionStatus @default(FILA)
   errorReason    String?
   uploadedFileName String?

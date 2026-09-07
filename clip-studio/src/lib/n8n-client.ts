@@ -28,6 +28,11 @@ export type ClipSummary = {
   modifiedAt: string | null;
   edited: boolean;
   submittedByName: string | null;
+  // add-full-word-extraction-mode: true when this clip came from the
+  // Palavra Completa pipeline's output folder (Videos-Cortes/PalavraCompleta/Cortes),
+  // derived from the `sourceFolder` tag the extended clip-studio/clips
+  // webhook attaches per item - see n8n's "Combinar Listagem de Clipes" node.
+  isFullWord: boolean;
 };
 
 class N8nNotConfiguredError extends Error {
@@ -152,6 +157,9 @@ type GraphDriveItem = {
     medium?: { url?: string };
     large?: { url?: string };
   }>;
+  // Tagged by n8n's "Combinar Listagem de Clipes" node - "Cortes" (Shorts)
+  // or "PalavraCompleta/Cortes" (Palavra Completa). Not a real Graph field.
+  sourceFolder?: string;
 };
 
 // start/end/real_start/real_end/edited deliberately excluded - see the
@@ -280,6 +288,7 @@ export async function listClips(): Promise<ClipSummary[]> {
         createdAt: mp4.createdDateTime ?? null,
         modifiedAt: mp4.lastModifiedDateTime ?? null,
         edited,
+        isFullWord: mp4.sourceFolder === "PalavraCompleta/Cortes",
         videoSource: meta?.videoSource ?? null,
       };
     })
@@ -368,10 +377,19 @@ export async function trimClip(
   }
 }
 
-/** Checks whether the given original file name now exists in Videos-Cortes/Videos (pipeline finished). */
-export async function isOriginalArchived(uploadedFileName: string): Promise<boolean> {
+/**
+ * Checks whether the given original file name now exists in the archive
+ * folder matching `mode` (Videos-Cortes/Videos for SHORTS,
+ * Videos-Cortes/PalavraCompleta/Videos for PALAVRA_COMPLETA) - see
+ * add-full-word-extraction-mode design.md decision 6.
+ */
+export async function isOriginalArchived(
+  uploadedFileName: string,
+  mode: "SHORTS" | "PALAVRA_COMPLETA" = "SHORTS"
+): Promise<boolean> {
   const result = await callWebhook<{ archived: boolean }>("clip-studio/videos/check-archived", {
     fileName: uploadedFileName,
+    mode,
   });
   return result.archived;
 }
@@ -380,8 +398,13 @@ export async function triggerIngestion(params: {
   submissionId: string;
   youtubeUrl: string;
   title: string;
+  // add-full-word-extraction-mode: routes the download to the OneDrive
+  // folder (and pipeline) matching the submission's mode - see design.md
+  // decision 2. Defaults to "SHORTS" so a caller that predates this field
+  // keeps today's behavior.
+  mode?: "SHORTS" | "PALAVRA_COMPLETA";
 }): Promise<void> {
-  await callWebhook("clip-studio/ingest", params);
+  await callWebhook("clip-studio/ingest", { mode: "SHORTS", ...params });
 }
 
 /**

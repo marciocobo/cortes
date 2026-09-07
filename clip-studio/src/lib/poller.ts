@@ -22,7 +22,7 @@ export async function pollProcessingSubmissions(): Promise<void> {
 
     let archived = false;
     try {
-      archived = await isOriginalArchived(submission.uploadedFileName);
+      archived = await isOriginalArchived(submission.uploadedFileName, submission.mode);
     } catch {
       // Transient n8n/OneDrive failure - leave status as-is, try again
       // next poll rather than prematurely erroring the submission.

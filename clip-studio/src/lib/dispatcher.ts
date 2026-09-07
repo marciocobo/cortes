@@ -28,6 +28,7 @@ export async function dispatchNextIfIdle(): Promise<void> {
       submissionId: next.id,
       youtubeUrl: next.youtubeUrl,
       title: next.title,
+      mode: next.mode,
     });
   } catch (err) {
     // A failed download must not block the queue - see youtube-ingestion
