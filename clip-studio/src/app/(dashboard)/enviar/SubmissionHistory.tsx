@@ -9,6 +9,7 @@ type Submission = {
   // YouTube link - see video-upload-ingestion spec.
   youtubeUrl: string | null;
   title: string;
+  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
   status: "FILA" | "BAIXANDO" | "PROCESSANDO" | "CONCLUIDO" | "ERRO";
   errorReason: string | null;
   createdAt: string;
@@ -21,6 +22,16 @@ type Attempt = {
   status: Submission["status"];
   errorReason: string | null;
   occurredAt: string;
+};
+
+// Mirrors the "Tipo de conteúdo" selector on the form (Pregação/Podcast) -
+// Shorts and Palavra Completa are both "Pregação" from that axis; the
+// finer Shorts-vs-Palavra-Completa distinction isn't shown here, matching
+// the mockup's two-value TIPO column.
+const CONTENT_TYPE_LABEL: Record<Submission["mode"], string> = {
+  SHORTS: "Pregação",
+  PALAVRA_COMPLETA: "Pregação",
+  PODCAST: "Podcast",
 };
 
 const STATUS_LABEL: Record<Submission["status"], string> = {
@@ -236,6 +247,7 @@ export default function SubmissionHistory() {
           <thead>
             <tr>
               <th>Vídeo</th>
+              <th>Tipo</th>
               <th>Link</th>
               <th>Enviado por</th>
               <th>Data / Status</th>
@@ -245,6 +257,7 @@ export default function SubmissionHistory() {
             {submissions.map((s) => (
               <tr key={s.id}>
                 <td data-label="Vídeo">{s.title}</td>
+                <td data-label="Tipo">{CONTENT_TYPE_LABEL[s.mode]}</td>
                 <td data-label="Link">
                   {s.youtubeUrl ? (
                     <a href={s.youtubeUrl} target="_blank" rel="noreferrer">

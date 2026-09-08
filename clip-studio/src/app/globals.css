@@ -94,6 +94,28 @@ button {
   cursor: pointer;
 }
 
+/* Pill-shaped toggle buttons (source-type tabs, content-type selector on
+   the Enviar Vídeo form) - fully rounded like .btn-primary/.pill, unlike
+   .btn-secondary's 4px corners which are used for regular secondary
+   actions elsewhere (e.g. UserManagement.tsx) and shouldn't change shape
+   there just to match this form's mockup. */
+.pill-toggle {
+  background: transparent;
+  color: var(--accent-blue);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pill-toggle-active {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
 .btn-danger {
   background: transparent;
   color: var(--danger);

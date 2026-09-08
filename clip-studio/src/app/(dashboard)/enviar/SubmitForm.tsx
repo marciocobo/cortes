@@ -78,7 +78,7 @@ export default function SubmitForm() {
         <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
-            className={sourceType === "link" ? "btn-primary" : "btn-secondary"}
+            className={sourceType === "link" ? "pill-toggle pill-toggle-active" : "pill-toggle"}
             onClick={() => setSourceType("link")}
             style={{ flex: 1 }}
           >
@@ -86,7 +86,7 @@ export default function SubmitForm() {
           </button>
           <button
             type="button"
-            className={sourceType === "file" ? "btn-primary" : "btn-secondary"}
+            className={sourceType === "file" ? "pill-toggle pill-toggle-active" : "pill-toggle"}
             onClick={() => setSourceType("file")}
             style={{ flex: 1 }}
           >
@@ -96,15 +96,14 @@ export default function SubmitForm() {
       </div>
 
       <div className="field" style={{ marginBottom: 16 }}>
-        <label>Tipo de conteúdo</label>
+        <label>Tipo de conteúdo *</label>
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <button
             type="button"
             role="radio"
             aria-checked={contentType === "PREGACAO"}
-            className={contentType === "PREGACAO" ? "btn-primary" : "btn-secondary"}
+            className={contentType === "PREGACAO" ? "pill-toggle pill-toggle-active" : "pill-toggle"}
             onClick={() => setContentType("PREGACAO")}
-            style={{ flex: 1 }}
           >
             Pregação
           </button>
@@ -112,9 +111,8 @@ export default function SubmitForm() {
             type="button"
             role="radio"
             aria-checked={contentType === "PODCAST"}
-            className={contentType === "PODCAST" ? "btn-primary" : "btn-secondary"}
+            className={contentType === "PODCAST" ? "pill-toggle pill-toggle-active" : "pill-toggle"}
             onClick={() => setContentType("PODCAST")}
-            style={{ flex: 1 }}
           >
             Podcast
           </button>
@@ -148,6 +146,33 @@ export default function SubmitForm() {
       ) : (
         <div className="field" style={{ marginBottom: 16 }}>
           <label htmlFor="videoFile">Arquivo de vídeo</label>
+          {/* The native file input's own button/text can't be restyled
+              consistently across browsers, so it's visually hidden and
+              triggered via this styled box instead - matches the look of
+              every other field on this form (dark box, border, rounded
+              corners) instead of the browser's default grey button. */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            style={{
+              width: "100%",
+              background: "#0a0a13",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              color: file ? "var(--text)" : "var(--text-dim)",
+              padding: "10px 12px",
+              cursor: "pointer",
+            }}
+          >
+            {file ? file.name : "Clique para selecionar um arquivo de vídeo"}
+          </div>
           <input
             id="videoFile"
             ref={fileInputRef}
@@ -155,6 +180,17 @@ export default function SubmitForm() {
             required
             accept="video/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            style={{
+              position: "absolute",
+              width: 1,
+              height: 1,
+              padding: 0,
+              margin: -1,
+              overflow: "hidden",
+              clip: "rect(0,0,0,0)",
+              whiteSpace: "nowrap",
+              border: 0,
+            }}
           />
         </div>
       )}
