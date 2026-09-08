@@ -937,6 +937,13 @@ function CutModal({
         </div>
 
         {clip.downloadUrl ? (
+          // No aspectRatio here on purpose - Shorts are 9:16, but Palavra
+          // Completa/Podcast clips keep the source video's original frame
+          // (e.g. 16:9 landscape, sometimes 4K). Forcing 9:16 squeezed a
+          // landscape clip into a vertical box instead of showing its real
+          // shape. Leaving width/height unset lets the <video> element use
+          // its own intrinsic dimensions once metadata loads, scaled down
+          // by maxWidth/maxHeight like any other image/video would be.
           <video
             ref={videoRef}
             src={clip.downloadUrl}
@@ -944,10 +951,8 @@ function CutModal({
             style={{
               display: "block",
               margin: "0 auto 16px",
-              width: "auto",
               maxWidth: "100%",
               maxHeight: CUT_PREVIEW_MAX_HEIGHT,
-              aspectRatio: "9 / 16",
               borderRadius: 8,
               background: "#000",
               objectFit: "contain",
@@ -957,10 +962,8 @@ function CutModal({
           <div
             style={{
               margin: "0 auto 16px",
-              width: "auto",
-              maxWidth: "100%",
-              maxHeight: CUT_PREVIEW_MAX_HEIGHT,
-              aspectRatio: "9 / 16",
+              width: "100%",
+              height: CUT_PREVIEW_MAX_HEIGHT,
               background: "#000",
               borderRadius: 8,
               display: "flex",
