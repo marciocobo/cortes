@@ -112,5 +112,15 @@ model AppConfig {
 model ClipDuration {
   itemId          String   @id
   durationSeconds Float
+  // True only when Clip Studio's own trim webhook successfully re-cut this
+  // clip - the sole source of truth for the "Cortado" status shown in the
+  // library. OneDrive's lastModifiedDateTime was tried first and abandoned:
+  // it also advances by however long a large file's chunked upload session
+  // takes (minutes, for a multi-GB Palavra Completa/Podcast clip), which
+  // made every such clip look "Cortado" the moment it was first uploaded,
+  // never touched since. A row can exist with trimmed=false (a rejected
+  // trim attempt still caches the real ffprobe-measured duration - see
+  // trimClip's catch branch) without ever flipping this flag.
+  trimmed         Boolean  @default(false)
   updatedAt       DateTime @updatedAt
 }

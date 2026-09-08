@@ -206,7 +206,8 @@ export async function listClips(): Promise<ClipSummary[]> {
   }
 
   // Fallback for when Graph's `video.duration` facet is missing (see the
-  // durationSeconds comment below) - a single batched query, not one per
+  // durationSeconds comment below), and the source of truth for "Cortado"
+  // (see the edited comment below) - a single batched query, not one per
   // clip, since most clips won't need it.
   const cachedDurations = await prisma.clipDuration.findMany({
     where: { itemId: { in: mp4Items.map((mp4) => mp4.id) } },
@@ -214,6 +215,7 @@ export async function listClips(): Promise<ClipSummary[]> {
   const cachedDurationByItemId = new Map(
     cachedDurations.map((c) => [c.itemId, c.durationSeconds])
   );
+  const trimmedByItemId = new Map(cachedDurations.map((c) => [c.itemId, c.trimmed]));
 
   const withMeta = await Promise.all(
     mp4Items.map(async (mp4) => {
@@ -264,17 +266,17 @@ export async function listClips(): Promise<ClipSummary[]> {
         cachedDurationByItemId.get(mp4.id) ??
         null;
 
-      // "Cortado" comes from the video file itself, not a meta.json flag
-      // the trim webhook used to set (and could fail to, leaving an
-      // already-cut file looking "Original" forever - see the OneDrive
-      // auth-failure incident). Every trim replaces the file's content via
-      // OneDrive's upload session, which always bumps lastModifiedDateTime
-      // past createdDateTime - a clip that was never touched since the
-      // "Blocos" pipeline generated it has the two timestamps equal.
-      const edited =
-        mp4.createdDateTime != null &&
-        mp4.lastModifiedDateTime != null &&
-        new Date(mp4.lastModifiedDateTime).getTime() !== new Date(mp4.createdDateTime).getTime();
+      // "Cortado" comes from Clip Studio's own record of having performed a
+      // successful trim (ClipDuration.trimmed), not a meta.json flag the
+      // trim webhook used to set (and could fail to, leaving an already-cut
+      // file looking "Original" forever - see the OneDrive auth-failure
+      // incident), and not OneDrive's lastModifiedDateTime vs.
+      // createdDateTime either (tried first, abandoned - a multi-GB Palavra
+      // Completa/Podcast clip's chunked upload session alone advances
+      // lastModifiedDateTime by however long the upload took, minutes past
+      // createdDateTime, making a clip nobody ever trimmed show "Cortado"
+      // the moment it first appeared - see the 2026-09-08 incident).
+      const edited = trimmedByItemId.get(mp4.id) === true;
 
       return {
         itemId: mp4.id,
@@ -329,12 +331,25 @@ export async function deleteClip(itemId: string): Promise<void> {
  * not the original source video - this can only shorten an already-produced
  * clip.
  */
-/** Upserts a real ffprobe-measured duration into the local cache - see the durationSeconds comment in listClips(). */
-async function cacheClipDuration(itemId: string, durationSeconds: number): Promise<void> {
+/**
+ * Upserts a real ffprobe-measured duration into the local cache - see the
+ * durationSeconds comment in listClips(). `trimmed: true` marks this clip as
+ * genuinely re-cut (see the edited comment in listClips()) - only pass it
+ * from a successful trim. Omitted (a rejected-trim caching call), an update
+ * leaves any existing `trimmed` value alone rather than downgrading a clip
+ * that was actually trimmed before this rejected attempt, and a fresh row
+ * is created with `trimmed: false` since a rejected attempt never touched
+ * the file.
+ */
+async function cacheClipDuration(
+  itemId: string,
+  durationSeconds: number,
+  trimmed?: boolean
+): Promise<void> {
   await prisma.clipDuration.upsert({
     where: { itemId },
-    create: { itemId, durationSeconds },
-    update: { durationSeconds },
+    create: { itemId, durationSeconds, trimmed: trimmed ?? false },
+    update: trimmed ? { durationSeconds, trimmed: true } : { durationSeconds },
   });
 }
 
@@ -357,7 +372,7 @@ export async function trimClip(
     // silently defeat the whole point of the feature (see
     // openspec/changes/add-clip-trim-silence-removal/design.md - "Duration
     // reporting").
-    await cacheClipDuration(itemId, result.durationSeconds).catch(() => {
+    await cacheClipDuration(itemId, result.durationSeconds, true).catch(() => {
       // Caching is a best-effort optimization for the library grid - never
       // let a DB hiccup turn an otherwise-successful trim into an error.
     });
