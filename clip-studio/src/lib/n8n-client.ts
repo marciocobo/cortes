@@ -465,6 +465,14 @@ export async function triggerUploadIngestion(params: {
   mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
   fileName: string;
   contentType: string;
+  // n8n's webhook trigger only captures the request body into
+  // $binary.data when it can size the request upfront - a proxied
+  // ReadableStream body defaults to chunked transfer encoding (no
+  // Content-Length) unless this is set explicitly, which silently drops
+  // the file entirely (confirmed against a real failed upload, execution
+  // #1445 - see the route's own comment for detail). The browser always
+  // knows a File/Blob's exact byte size, so this is never a guess.
+  contentLength: string;
   fileStream: ReadableStream<Uint8Array>;
 }): Promise<void> {
   const config = await getAppConfig();
@@ -479,7 +487,10 @@ export async function triggerUploadIngestion(params: {
   url.searchParams.set("mode", params.mode);
   url.searchParams.set("fileName", params.fileName);
 
-  const headers: Record<string, string> = { "Content-Type": params.contentType };
+  const headers: Record<string, string> = {
+    "Content-Type": params.contentType,
+    "Content-Length": params.contentLength,
+  };
   if (config.n8nWebhookSharedSecret) {
     headers["X-Clip-Studio-Secret"] = config.n8nWebhookSharedSecret;
   }

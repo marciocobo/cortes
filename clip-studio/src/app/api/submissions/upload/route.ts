@@ -42,6 +42,23 @@ export async function POST(request: Request) {
     if (!request.body) {
       return NextResponse.json({ error: "Corpo da requisição vazio" }, { status: 400 });
     }
+    // n8n's webhook trigger only captures the body into $binary.data when
+    // it can size the request upfront - confirmed against a real failed
+    // upload (execution #1445): the proxied request below sends the
+    // ReadableStream with no explicit length, Node's fetch/undici defaults
+    // that to Transfer-Encoding: chunked, and the trigger's output item
+    // came back with no `binary` key at all (not even an empty one). The
+    // browser always knows a File/Blob's exact size and sets this header
+    // itself on the original request - forwarding it explicitly is what
+    // makes the proxied request carry a real Content-Length instead of
+    // falling back to chunked.
+    const contentLength = request.headers.get("content-length");
+    if (!contentLength) {
+      return NextResponse.json(
+        { error: "Não foi possível determinar o tamanho do arquivo" },
+        { status: 400 }
+      );
+    }
 
     const submission = await prisma.submission.create({
       data: {
@@ -64,6 +81,7 @@ export async function POST(request: Request) {
         mode,
         fileName,
         contentType: contentType || "application/octet-stream",
+        contentLength,
         fileStream: request.body,
       });
       // Deliberately not setting status here. n8n's own workflow calls
