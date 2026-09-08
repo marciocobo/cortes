@@ -5,7 +5,9 @@ import type { ReactNode } from "react";
 
 type Submission = {
   id: string;
-  youtubeUrl: string;
+  // Null for a submission made via direct file upload instead of a
+  // YouTube link - see video-upload-ingestion spec.
+  youtubeUrl: string | null;
   title: string;
   status: "FILA" | "BAIXANDO" | "PROCESSANDO" | "CONCLUIDO" | "ERRO";
   errorReason: string | null;
@@ -244,9 +246,13 @@ export default function SubmissionHistory() {
               <tr key={s.id}>
                 <td data-label="Vídeo">{s.title}</td>
                 <td data-label="Link">
-                  <a href={s.youtubeUrl} target="_blank" rel="noreferrer">
-                    {s.youtubeUrl}
-                  </a>
+                  {s.youtubeUrl ? (
+                    <a href={s.youtubeUrl} target="_blank" rel="noreferrer">
+                      {s.youtubeUrl}
+                    </a>
+                  ) : (
+                    <span style={{ color: "var(--text-dim)" }}>Arquivo enviado</span>
+                  )}
                 </td>
                 <td data-label="Enviado por">{s.submittedBy.name}</td>
                 <td data-label="Data / Status">

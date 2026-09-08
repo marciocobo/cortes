@@ -561,6 +561,14 @@ export default function VideoLibrary() {
                     Palavra Completa
                   </span>
                 )}
+                {clip.isPodcast && (
+                  <span
+                    className="clip-status-pill"
+                    style={{ marginBottom: 4, display: "inline-block", background: "#f6a061", color: "#0a0a13" }}
+                  >
+                    Podcast
+                  </span>
+                )}
                 <p className="name">{clip.hook || clip.name}</p>
                 <p className="meta">
                   {[formatSize(clip.sizeBytes), formatDate(clip.createdAt)].filter(Boolean).join(" · ")}

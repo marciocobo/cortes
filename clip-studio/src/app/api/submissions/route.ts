@@ -27,7 +27,7 @@ const bodySchema = z.object({
   title: z.string().trim().min(1, "Título não pode ser vazio"),
   // youtube-ingestion spec: "Submit a YouTube link" - defaults to SHORTS so
   // omitting it (or any pre-existing client) keeps today's behavior.
-  mode: z.enum(["SHORTS", "PALAVRA_COMPLETA"]).default("SHORTS"),
+  mode: z.enum(["SHORTS", "PALAVRA_COMPLETA", "PODCAST"]).default("SHORTS"),
 });
 
 // youtube-ingestion spec: "Submit a YouTube link"

@@ -33,6 +33,10 @@ export type ClipSummary = {
   // derived from the `sourceFolder` tag the extended clip-studio/clips
   // webhook attaches per item - see n8n's "Combinar Listagem de Clipes" node.
   isFullWord: boolean;
+  // add-podcast-clipping-mode: true when this clip came from the Podcast
+  // pipeline's output folder (Videos-Cortes/Podcast/Cortes) - same
+  // sourceFolder-tag mechanism as isFullWord.
+  isPodcast: boolean;
 };
 
 class N8nNotConfiguredError extends Error {
@@ -54,6 +58,11 @@ const WEBHOOK_TIMEOUT_MS = 20_000;
 // budget was already tight for a single encode and is not enough for both.
 const TRIM_WEBHOOK_TIMEOUT_MS = 180_000;
 const META_FETCH_TIMEOUT_MS = 10_000;
+// A whole-video upload (potentially several GB, see the VPS 4K sermon
+// recordings already observed in this project) transfers no faster than
+// the Uploader's own connection - generous enough not to cut off a real
+// upload in progress, not a promise that every file completes within it.
+const UPLOAD_WEBHOOK_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -291,6 +300,7 @@ export async function listClips(): Promise<ClipSummary[]> {
         modifiedAt: mp4.lastModifiedDateTime ?? null,
         edited,
         isFullWord: mp4.sourceFolder === "PalavraCompleta/Cortes",
+        isPodcast: mp4.sourceFolder === "Podcast/Cortes",
         videoSource: meta?.videoSource ?? null,
       };
     })
@@ -395,12 +405,14 @@ export async function trimClip(
 /**
  * Checks whether the given original file name now exists in the archive
  * folder matching `mode` (Videos-Cortes/Videos for SHORTS,
- * Videos-Cortes/PalavraCompleta/Videos for PALAVRA_COMPLETA) - see
- * add-full-word-extraction-mode design.md decision 6.
+ * Videos-Cortes/PalavraCompleta/Videos for PALAVRA_COMPLETA,
+ * Videos-Cortes/Podcast/Videos for PODCAST) - see
+ * add-full-word-extraction-mode design.md decision 6 and
+ * add-podcast-clipping-mode design.md decision 7.
  */
 export async function isOriginalArchived(
   uploadedFileName: string,
-  mode: "SHORTS" | "PALAVRA_COMPLETA" = "SHORTS"
+  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST" = "SHORTS"
 ): Promise<boolean> {
   const result = await callWebhook<{ archived: boolean }>("clip-studio/videos/check-archived", {
     fileName: uploadedFileName,
@@ -416,10 +428,80 @@ export async function triggerIngestion(params: {
   // add-full-word-extraction-mode: routes the download to the OneDrive
   // folder (and pipeline) matching the submission's mode - see design.md
   // decision 2. Defaults to "SHORTS" so a caller that predates this field
-  // keeps today's behavior.
-  mode?: "SHORTS" | "PALAVRA_COMPLETA";
+  // keeps today's behavior. add-podcast-clipping-mode adds "PODCAST" as a
+  // third, equally independent value (design.md decision 1).
+  mode?: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
 }): Promise<void> {
   await callWebhook("clip-studio/ingest", { mode: "SHORTS", ...params });
+}
+
+/**
+ * Ingests a video submitted by direct file upload instead of a YouTube URL
+ * (add-podcast-clipping-mode, video-upload-ingestion spec) - streams
+ * `fileStream` straight through to n8n's `clip-studio/ingest/upload`
+ * webhook without ever buffering the file in this process's memory, the
+ * same "why" already documented for the n8n-side OneDrive download in
+ * CLAUDE.md (a multi-GB file loaded whole into memory crashed the n8n
+ * container in production before that fix).
+ *
+ * Deliberately bypasses `callWebhook()`: that helper JSON-encodes its body
+ * and retries transient failures, neither of which makes sense for a
+ * request whose body is a single-pass, already-in-flight byte stream - a
+ * failed attempt cannot be safely retried without re-reading the stream
+ * from its start, which a `ReadableStream` does not allow once consumed.
+ * The caller (the upload API route) is responsible for marking the
+ * submission `ERRO` if this throws.
+ *
+ * n8n's own workflow calls back to the existing
+ * `/api/webhooks/n8n/ingestion` route once the upload actually lands in
+ * the mode-matching OneDrive queue folder (or fails) - this function only
+ * confirms n8n accepted and finished receiving the stream, exactly
+ * mirroring how `triggerIngestion()` only kicks off a YouTube download
+ * rather than waiting for it to finish.
+ */
+export async function triggerUploadIngestion(params: {
+  submissionId: string;
+  title: string;
+  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
+  fileName: string;
+  contentType: string;
+  fileStream: ReadableStream<Uint8Array>;
+}): Promise<void> {
+  const config = await getAppConfig();
+  if (!config.n8nIngestWebhookUrl) {
+    throw new N8nNotConfiguredError();
+  }
+
+  const base = config.n8nIngestWebhookUrl.replace(/\/+$/, "");
+  const url = new URL(`${base}/clip-studio/ingest/upload`);
+  url.searchParams.set("submissionId", params.submissionId);
+  url.searchParams.set("title", params.title);
+  url.searchParams.set("mode", params.mode);
+  url.searchParams.set("fileName", params.fileName);
+
+  const headers: Record<string, string> = { "Content-Type": params.contentType };
+  if (config.n8nWebhookSharedSecret) {
+    headers["X-Clip-Studio-Secret"] = config.n8nWebhookSharedSecret;
+  }
+
+  const res = await fetchWithTimeout(
+    url.toString(),
+    {
+      method: "POST",
+      headers,
+      body: params.fileStream,
+      // Node's fetch (undici) requires this to send a streaming
+      // ReadableStream request body - without it, undici throws
+      // synchronously before the request is even attempted.
+      duplex: "half",
+    } as RequestInit,
+    UPLOAD_WEBHOOK_TIMEOUT_MS
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Envio do arquivo para o N8N falhou (${res.status}): ${text || res.statusText}`);
+  }
 }
 
 /**

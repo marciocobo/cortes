@@ -24,9 +24,13 @@ export async function dispatchNextIfIdle(): Promise<void> {
   await prisma.submission.update({ where: { id: next.id }, data: { status: "BAIXANDO" } });
 
   try {
+    // youtubeUrl is only ever null for a file-upload submission
+    // (video-upload-ingestion spec), and those are created with status
+    // BAIXANDO directly - never FILA - so they never reach this query in
+    // the first place (see /api/submissions/upload/route.ts).
     await triggerIngestion({
       submissionId: next.id,
-      youtubeUrl: next.youtubeUrl,
+      youtubeUrl: next.youtubeUrl!,
       title: next.title,
       mode: next.mode,
     });

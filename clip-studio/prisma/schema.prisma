@@ -24,13 +24,15 @@ enum SubmissionStatus {
   ERRO
 }
 
-// See openspec/changes/add-full-word-extraction-mode - Palavra Completa mode
-// routes a submission to a separate n8n pipeline instead of "Blocos", never
-// both. SHORTS is the default so every pre-existing Submission row keeps
+// See openspec/changes/archive/2026-09-08-add-full-word-extraction-mode and
+// add-podcast-clipping-mode - each non-SHORTS mode routes a submission to a
+// separate, independent n8n pipeline instead of "Blocos", never more than
+// one. SHORTS is the default so every pre-existing Submission row keeps
 // today's behavior without a backfill.
 enum SubmissionMode {
   SHORTS
   PALAVRA_COMPLETA
+  PODCAST
 }
 
 model User {
@@ -48,7 +50,9 @@ model User {
 
 model Submission {
   id             String           @id @default(cuid())
-  youtubeUrl     String
+  // Null for a submission created via direct file upload (see
+  // video-upload-ingestion spec) - there is no YouTube URL for those.
+  youtubeUrl     String?
   title          String
   mode           SubmissionMode   @default(SHORTS)
   status         SubmissionStatus @default(FILA)

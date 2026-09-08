@@ -30,6 +30,10 @@ The system SHALL fetch the submitted video and, depending on the submission's mo
 - **WHEN** a submission's download completes successfully
 - **THEN** the system places the video file in the OneDrive folder matching its mode (`Videos-Cortes` for `Shorts`, `Videos-Cortes/PalavraCompleta` for `Palavra Completa`, `Videos-Cortes/Podcast` for `Podcast`) using a file name that cannot collide with any other submission's file, updates the submission status to `Processando`, and prompts the corresponding pipeline to start rather than waiting for its next scheduled check
 
+#### Scenario: Download succeeds and file reaches the Palavra Completa pipeline's folder
+- **WHEN** a submission with mode `Palavra Completa` completes its download
+- **THEN** the system places the video file in `Videos-Cortes/PalavraCompleta` using a file name that cannot collide with any other submission's file, updates the submission status to `Processando`, and prompts the "Palavra Completa" pipeline to start rather than waiting for its next scheduled check
+
 #### Scenario: Download succeeds and file reaches the Podcast pipeline's folder
 - **WHEN** a submission with mode `Podcast` completes its download
 - **THEN** the system places the video file in `Videos-Cortes/Podcast` using a file name that cannot collide with any other submission's file, updates the submission status to `Processando`, and prompts the podcast pipeline to start rather than waiting for its next scheduled check
@@ -55,6 +59,10 @@ The system SHALL track and display each submission's status as it progresses thr
 
 #### Scenario: Status reflects real Shorts pipeline completion
 - **WHEN** the "Blocos" pipeline finishes processing a video submitted with mode `Shorts` (its clips are uploaded to `Videos-Cortes/Cortes` and the original is archived to `Videos-Cortes/Videos`)
+- **THEN** the system updates that submission's status to `Concluído`
+
+#### Scenario: Status reflects real Palavra Completa pipeline completion
+- **WHEN** the "Palavra Completa" pipeline finishes processing a video submitted with mode `Palavra Completa` (its single clip is uploaded to `Videos-Cortes/PalavraCompleta/Cortes` and the original is archived to `Videos-Cortes/PalavraCompleta/Videos`)
 - **THEN** the system updates that submission's status to `Concluído`
 
 #### Scenario: Status reflects real Podcast pipeline completion

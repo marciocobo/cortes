@@ -25,6 +25,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         { status: 409 }
       );
     }
+    // A file-upload submission has no youtubeUrl to re-download from - the
+    // uploaded bytes were only ever streamed through, never persisted by
+    // Clip Studio. dispatchNextIfIdle()/triggerIngestion() assume a URL,
+    // so re-queuing here would silently fail deep in that call instead of
+    // with a clear message at the point of the actual request.
+    if (submission.youtubeUrl == null) {
+      return NextResponse.json(
+        {
+          error:
+            "Este envio foi feito por upload de arquivo e não pode ser reprocessado automaticamente - envie o arquivo novamente.",
+        },
+        { status: 409 }
+      );
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       await tx.submissionAttempt.create({
