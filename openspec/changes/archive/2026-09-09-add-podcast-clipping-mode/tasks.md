@@ -52,12 +52,12 @@
 - [x] 6.2 Todos os 8 comandos bash novos/alterados (trava compartilhada, wget download/upload em chunks — já com o quoting seguro `"${PREFIX}"*` —, ffprobe, whisper, ffmpeg com snap de silêncio + crop) validados com `sh -n`
 - [x] 6.3 Confirmado via `get_workflow_details` (diff programático nó a nó): os 20 nodes dos ramos `SHORTS`/`PALAVRA_COMPLETA` do workflow de ingestão têm `parameters` byte-a-byte idênticos aos de antes desta change — só `Normalizar Entrada` mudou (esperado, reconhece `PODCAST`). Nenhum node de "Blocos"/"Palavra Completa" foi tocado (esta change só criou o workflow novo `Zfwhv4pppJf3NhkR`, cópia independente)
 - [x] 6.4 `npx next build` + `npm run lint` (projeto inteiro): build limpo, lint limpo, nas duas vezes que rodou (após o grupo 1 e após o grupo 5)
-- [ ] 6.5 **Requer ação do usuário/decisão de escopo.** Teste real de upload de arquivo grande — não executado nesta sessão: requer decidir se o deploy do código Clip Studio (schema migration + rota nova) já deve ir para produção agora, e a escolha de um arquivo de teste é do usuário
+- [x] 6.5 Deploy em produção feito (código Clip Studio + migrations, ver CLAUDE.md) e teste real de upload de arquivo grande confirmado pelo usuário — sem timeout, servidor customizado (`server.js`) funcionando
 
 ## 7. Entrega
 
-- [ ] 7.1 **Requer ação do usuário.** Smoke test end-to-end: 1 submissão em modo Podcast via link do YouTube contra um episódio curto de teste — confirmar fila, download, trava compartilhada (sem colidir com uma execução de "Blocos"/"Palavra Completa"), múltiplos clipes com crop 9:16, badge "Podcast" na aba Vídeos, status `Concluído`
-- [ ] 7.2 **Requer ação do usuário.** Smoke test do upload de arquivo direto (qualquer modo) — confirmar que o arquivo chega à pasta de fila correta sem passar por `yt-dlp` e que o pipeline correspondente processa normalmente
-- [ ] 7.3 **Requer ação do usuário.** Confirmar que uma submissão em modo Shorts ou Palavra Completa, disparada logo antes ou depois de 7.1/7.2, continua funcionando normalmente sem nenhuma regressão
+- [x] 7.1 Smoke test end-to-end confirmado pelo usuário: submissão em modo Podcast via link do YouTube completou com sucesso
+- [x] 7.2 Smoke test do upload de arquivo direto confirmado pelo usuário
+- [x] 7.3 Confirmado pelo usuário: Shorts/Palavra Completa continuam funcionando sem regressão
 - [ ] 7.4 Validar qualitativamente os primeiros clipes de podcast reais (ouvido humano ou agente `clipador`) contra os critérios de destaque — ajustar pesos do prompt se necessário (ver design.md, Open Questions)
 - [x] 7.5 Documentado no CLAUDE.md (seção "Estado atual"), incluindo a lista explícita do que ainda não foi validado com execução real
