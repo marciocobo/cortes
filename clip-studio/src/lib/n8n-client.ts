@@ -438,11 +438,13 @@ export async function triggerIngestion(params: {
 /**
  * Ingests a video submitted by direct file upload instead of a YouTube URL
  * (add-podcast-clipping-mode, video-upload-ingestion spec) - streams
- * `fileStream` straight through to n8n's `clip-studio/ingest/upload`
- * webhook without ever buffering the file in this process's memory, the
- * same "why" already documented for the n8n-side OneDrive download in
- * CLAUDE.md (a multi-GB file loaded whole into memory crashed the n8n
- * container in production before that fix).
+ * `fileStream` to n8n's `clip-studio/ingest/upload` webhook. The caller
+ * (the upload API route) reads `fileStream` from a local temp file it just
+ * buffered the upload to, not the live incoming request - never buffered
+ * in this process's memory either way, the same "why" already documented
+ * for the n8n-side OneDrive download in CLAUDE.md (a multi-GB file loaded
+ * whole into memory crashed the n8n container in production before that
+ * fix).
  *
  * Deliberately bypasses `callWebhook()`: that helper JSON-encodes its body
  * and retries transient failures, neither of which makes sense for a
@@ -470,8 +472,8 @@ export async function triggerUploadIngestion(params: {
   // ReadableStream body defaults to chunked transfer encoding (no
   // Content-Length) unless this is set explicitly, which silently drops
   // the file entirely (confirmed against a real failed upload, execution
-  // #1445 - see the route's own comment for detail). The browser always
-  // knows a File/Blob's exact byte size, so this is never a guess.
+  // #1445). The caller gets this from stat()-ing the temp file it just
+  // wrote, so it's always exact.
   contentLength: string;
   fileStream: ReadableStream<Uint8Array>;
 }): Promise<void> {
