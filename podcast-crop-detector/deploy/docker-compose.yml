@@ -1,0 +1,34 @@
+# podcast-crop-detector deployment stack for the Contabo VPS documented in
+# VPS.md. Internal-only service: no published port, no Caddy route. Joins
+# the shared `n8n_default` network so the "YouTube Podcast — Extração de
+# Highlights" workflow (Zfwhv4pppJf3NhkR, node "Detectar Rosto Ativo
+# Podcast") can reach it by container name, and bind-mounts the SAME host
+# directory n8n already uses for /home/node/.n8n-files (read-only - this
+# service only ever reads video files n8n already downloaded/cut, never
+# writes there) - see
+# openspec/changes/add-podcast-active-speaker-crop/design.md. Same pattern
+# already used by cookie-refresher-1.
+#
+# Deploy from /root/podcast-crop-detector on the VPS:
+#   docker compose -f deploy/docker-compose.yml up -d --build
+
+services:
+  podcast-crop-detector:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: podcast-crop-detector-1
+    restart: unless-stopped
+    environment:
+      VIDEO_ROOT: /data
+      PORT: "4610"
+    volumes:
+      - /root/n8n/n8n_files:/data:ro
+    networks:
+      - n8n_default
+    # No `ports:` - reached only by container name on n8n_default, the same
+    # pattern already used by clipstudio-web-1 and cookie-refresher-1.
+
+networks:
+  n8n_default:
+    external: true

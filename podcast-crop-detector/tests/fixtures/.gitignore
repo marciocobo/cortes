@@ -1,0 +1,6 @@
+# Real clips from a processed episode, downloaded locally to smoke-test
+# detector.py against real footage (see tests/test_detector.py) - not
+# committed: real identifiable people's faces from a third-party interview,
+# and ~140MB, not appropriate as a repo fixture.
+*
+!.gitignore
