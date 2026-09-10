@@ -28,10 +28,32 @@ TRACK_MATCH_FRACTION = 0.15
 DEFAULT_SAMPLE_COUNT = 6
 MOUTH_ROI_SIZE = (48, 32)  # (w, h), fixed size so frame-to-frame diff is comparable
 
+# A real bug found in production (see CLAUDE.md, 2026-09-10): with a fixed
+# 6 samples regardless of segment length, a long segment (e.g. 108s, no
+# camera cut detected within it) samples too sparsely - roughly one frame
+# per ~18s - to reliably track who's speaking as turns change. Scale the
+# sample count with duration instead, capped for cost.
+SECONDS_PER_SAMPLE = 8.0
+MAX_SAMPLE_COUNT = 20
+
+# Same investigation found a second, independent bug: two DIFFERENT faces
+# detected in the SAME sampled frame could both land within
+# TRACK_MATCH_FRACTION of each other and get merged into one track,
+# corrupting its "motion" score with a false signal (the pixel diff between
+# two different people's mouths, not real speech motion). Track matching
+# must be one-face-per-track-per-timestamp (see _match_faces_to_tracks).
+
 # See add-podcast-scene-segmented-crop/design.md - Decisions 1 and 4.
 CUT_SAMPLE_STEP = 2.0  # seconds between histogram samples when scanning for cuts
 CUT_HIST_DISTANCE_THRESHOLD = 0.5  # correlation distance (1 - correlation); higher = more different
 MAX_SEGMENTS = 4
+
+# A camera cut isn't the only reason a single "winner" crop position can go
+# stale - a long, unbroken take (no cut detected) can still have several
+# people taking turns speaking. Split any post-cut-detection segment
+# longer than this into equal time-based sub-windows so each gets its own
+# independent speaker analysis, same as a real camera cut would.
+MAX_SEGMENT_DURATION = 45.0
 
 _net = None
 
@@ -90,6 +112,41 @@ def _sample_timestamps(start, end, count):
     return [start + step * (i + 1) for i in range(count)]
 
 
+def _sample_count_for_duration(duration):
+    """More samples for a longer range, so a 108s segment doesn't get the
+    same ~6 samples as a 12s one (see MAX_SEGMENT_DURATION comment)."""
+    return max(DEFAULT_SAMPLE_COUNT, min(MAX_SAMPLE_COUNT, round(duration / SECONDS_PER_SAMPLE)))
+
+
+def _match_faces_to_tracks(faces, tracks, match_dist):
+    """One-to-one greedy matching between this frame's detected faces and
+    existing tracks, closest pairs first - so two different faces present
+    in the SAME frame can never both be folded into the same track (the
+    bug found in production: it corrupted the winning track's "motion"
+    score with the pixel diff between two different people's mouths, not
+    real speech motion). Returns a list of (face, track_or_None) pairs -
+    None means "start a new track for this face"."""
+    candidates = []
+    for fi, face in enumerate(faces):
+        cx = (face[1] + face[3]) / 2.0
+        for ti, track in enumerate(tracks):
+            d = abs(track["cx"] - cx)
+            if d < match_dist:
+                candidates.append((d, fi, ti))
+    candidates.sort(key=lambda c: c[0])
+
+    assigned_face = set()
+    assigned_track = set()
+    result = [None] * len(faces)
+    for d, fi, ti in candidates:
+        if fi in assigned_face or ti in assigned_track:
+            continue
+        result[fi] = tracks[ti]
+        assigned_face.add(fi)
+        assigned_track.add(ti)
+    return result
+
+
 def _read_frame_at(cap, seconds):
     cap.set(cv2.CAP_PROP_POS_MSEC, seconds * 1000.0)
     ok, frame = cap.read()
@@ -98,7 +155,7 @@ def _read_frame_at(cap, seconds):
     return frame
 
 
-def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_height=1920, output_height=None, sample_count=DEFAULT_SAMPLE_COUNT):
+def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_height=1920, output_height=None, sample_count=None):
     """Returns a dict: {found: bool, xOffset, faceCount, confidence} (xOffset
     and the rest only present when found is True).
 
@@ -122,6 +179,8 @@ def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_h
     frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
+    if sample_count is None:
+        sample_count = _sample_count_for_duration(end_time - start_time)
     timestamps = _sample_timestamps(start_time, end_time, sample_count)
 
     # tracks: each is {"cx": float, "confidences": [...], "prev_mouth": ndarray|None, "motion": float}
@@ -133,18 +192,12 @@ def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_h
         if frame is None:
             continue
         faces = _detect_faces(frame)
-        for confidence, x1, y1, x2, y2 in faces:
+        matches = _match_faces_to_tracks(faces, tracks, match_dist)
+
+        for (confidence, x1, y1, x2, y2), best_track in zip(faces, matches):
             box = (confidence, x1, y1, x2, y2)
             cx = (x1 + x2) / 2.0
             mouth = _mouth_roi_gray(frame, box)
-
-            best_track = None
-            best_dist = match_dist
-            for track in tracks:
-                d = abs(track["cx"] - cx)
-                if d < best_dist:
-                    best_dist = d
-                    best_track = track
 
             if best_track is None:
                 tracks.append({
@@ -229,16 +282,35 @@ def _detect_cuts(cap, start_time, end_time, step=CUT_SAMPLE_STEP):
     return cuts
 
 
-def find_crop_segments(video_path, start_time, end_time, crop_width=1080, crop_height=1920, output_height=None, sample_count=DEFAULT_SAMPLE_COUNT):
+def _split_long_segment(seg_start, seg_end, max_duration=MAX_SEGMENT_DURATION):
+    """A camera cut isn't the only reason a static crop can go stale - a
+    long unbroken take can still have people taking turns speaking. Split
+    a segment longer than max_duration into equal sub-windows (not just an
+    arbitrary chunk size) so each gets its own independent speaker
+    analysis, matching the real bug found in production: a 108s
+    no-cut segment sampled only ~6 times total (once per ~18s) and its
+    winning "speaker" track was decided by a single corrupted sample."""
+    duration = seg_end - seg_start
+    if duration <= max_duration:
+        return [(seg_start, seg_end)]
+    n = int(-(-duration // max_duration))  # ceil division
+    step = duration / n
+    return [(seg_start + i * step, seg_start + (i + 1) * step) for i in range(n)]
+
+
+def find_crop_segments(video_path, start_time, end_time, crop_width=1080, crop_height=1920, output_height=None, sample_count=None):
     """Like find_crop_position, but splits [start_time, end_time] into
-    segments at detected camera cuts and returns a crop position for each
-    segment independently - see
+    segments at detected camera cuts (and further at fixed time windows
+    within any segment still longer than MAX_SEGMENT_DURATION - see
+    _split_long_segment) and returns a crop position for each segment
+    independently - see
     openspec/changes/add-podcast-scene-segmented-crop/design.md.
 
     Returns a list of dicts, each shaped like find_crop_position's return
     value plus `startTime`/`endTime` for that segment. A clip with no
-    detected cut returns a single segment covering the whole range -
-    identical in spirit to calling find_crop_position once."""
+    detected cut and no over-long segment returns a single segment
+    covering the whole range - identical in spirit to calling
+    find_crop_position once."""
     if not os.path.isfile(video_path):
         raise FileNotFoundError(video_path)
 
@@ -251,9 +323,12 @@ def find_crop_segments(video_path, start_time, end_time, crop_width=1080, crop_h
     cap.release()
 
     boundaries = [start_time] + cuts + [end_time]
-    segments = []
+    windows = []
     for i in range(len(boundaries) - 1):
-        seg_start, seg_end = boundaries[i], boundaries[i + 1]
+        windows.extend(_split_long_segment(boundaries[i], boundaries[i + 1]))
+
+    segments = []
+    for seg_start, seg_end in windows:
         result = find_crop_position(
             video_path, seg_start, seg_end,
             crop_width=crop_width, crop_height=crop_height,
