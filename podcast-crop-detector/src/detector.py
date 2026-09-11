@@ -33,7 +33,23 @@ MOUTH_ROI_SIZE = (48, 32)  # (w, h), fixed size so frame-to-frame diff is compar
 # camera cut detected within it) samples too sparsely - roughly one frame
 # per ~18s - to reliably track who's speaking as turns change. Scale the
 # sample count with duration instead, capped for cost.
-SECONDS_PER_SAMPLE = 8.0
+#
+# SECONDS_PER_SAMPLE was originally 8.0, but that quietly canceled out
+# against MAX_SEGMENT_DURATION below: every segment gets split to <=45s
+# (see _split_long_segment), and round(45/8) == 6 == DEFAULT_SAMPLE_COUNT -
+# so the "scale with duration" fix never actually produced more than the
+# floor of 6 samples for ANY segment post-split, in either of the two real
+# clips that motivated it (confirmed: every segment in both clips sampled
+# at exactly 6, days after the fix was supposed to widen that). Lowered to
+# 4.0 so a full 45s segment gets ~11 samples instead of 6 - closer to what
+# "who talked for at least a couple of continuous seconds" actually needs
+# to tell apart from a single reaction (see TALK_DIFF_THRESHOLD and
+# best_run below), without paying for 1 DNN inference per video frame.
+# Measured against real footage: analyzing a full ~177s clip end to end
+# at this density takes ~45-70s of sidecar time (up from ~20s before this
+# change) - the caller's HTTP timeout was bumped alongside this (see
+# "Detectar Rosto Ativo Podcast" node) to leave headroom.
+SECONDS_PER_SAMPLE = 4.0
 MAX_SAMPLE_COUNT = 20
 
 # Same investigation found a second, independent bug: two DIFFERENT faces
@@ -42,6 +58,27 @@ MAX_SAMPLE_COUNT = 20
 # corrupting its "motion" score with a false signal (the pixel diff between
 # two different people's mouths, not real speech motion). Track matching
 # must be one-face-per-track-per-timestamp (see _match_faces_to_tracks).
+
+# A third bug found in production AFTER the two fixes above (see CLAUDE.md,
+# 2026-09-10, clip `boas-escolhas-mudam-o-pais`): summing raw per-step mouth
+# diffs rewards MAGNITUDE, not CONSISTENCY, so a track can win on total
+# "motion" from just one or two big jumps (a head turn, a reaction) even
+# though it barely moved the rest of the time - while the track that's
+# genuinely talking shows smaller but steady motion on nearly every sample.
+# A real 22.7s segment had two tracks at 133.12 vs 128.75 total motion (a
+# ~3% margin - a coin-flip); per-step, the eventual sum-based loser had
+# diffs of [33.00, 21.04, 24.48, 25.07, 29.52] (motion on every single
+# sample, the shape of continuous articulation) while the sum-based winner
+# had [37.12, 32.51, 40.67, 10.23, 8.21] (two large jumps then two quiet
+# samples - the shape of an occasional head movement, not talking).
+# Confirmed against a real reference crop of that segment: the sum-based
+# loser was the one visibly talking, well-centered and legible; the
+# sum-based winner was reacting, not speaking. Ranking tracks by how many
+# samples clear TALK_DIFF_THRESHOLD (consistency), falling back to total
+# motion only to break an exact tie, picks the correct track here and does
+# not change the winner on any other segment from either real clip that
+# motivated this fix (checked one by one against the sum-based ranking).
+TALK_DIFF_THRESHOLD = 15.0
 
 # See add-podcast-scene-segmented-crop/design.md - Decisions 1 and 4.
 CUT_SAMPLE_STEP = 2.0  # seconds between histogram samples when scanning for cuts
@@ -205,14 +242,23 @@ def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_h
                     "confidences": [confidence],
                     "prev_mouth": mouth,
                     "motion": 0.0,
+                    "talk_hits": 0,
+                    "cur_run": 0,
+                    "best_run": 0,
                 })
                 continue
 
             best_track["cx"] = (best_track["cx"] + cx) / 2.0  # drift slowly with the average
             best_track["confidences"].append(confidence)
             if mouth is not None and best_track["prev_mouth"] is not None:
-                diff = cv2.absdiff(mouth, best_track["prev_mouth"])
-                best_track["motion"] += float(np.mean(diff))
+                diff = float(np.mean(cv2.absdiff(mouth, best_track["prev_mouth"])))
+                best_track["motion"] += diff
+                if diff >= TALK_DIFF_THRESHOLD:
+                    best_track["talk_hits"] += 1
+                    best_track["cur_run"] += 1
+                    best_track["best_run"] = max(best_track["best_run"], best_track["cur_run"])
+                else:
+                    best_track["cur_run"] = 0
             best_track["prev_mouth"] = mouth
 
     cap.release()
@@ -220,7 +266,36 @@ def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_h
     if not tracks:
         return {"found": False}
 
-    winner = max(tracks, key=lambda track: track["motion"])
+    # A track that talks for a real stretch shows up as several CONSECUTIVE
+    # hits, not just a high hit count scattered across the segment - two
+    # short reactions a few samples apart can rack up the same talk_hits
+    # as one sustained run without being sustained speech at all. Rank by
+    # the longest consecutive run first (closest proxy to "how many
+    # seconds in a row"), talk_hits as the next tiebreak, total motion
+    # last - see TALK_DIFF_THRESHOLD and SECONDS_PER_SAMPLE comments for
+    # why hits and sampling density matter here.
+    #
+    # A real case found in production (see CLAUDE.md, 2026-09-10) shows
+    # this still isn't enough: a track can rack up a long, unbroken
+    # best_run from sustained motion that ISN'T talking at all - one
+    # person spent ~30s wiping their face with a tissue while the other
+    # person, visibly talking in every frame checked (mouth open, hand
+    # gesturing) across the same stretch, scored a LOWER best_run because
+    # natural speech has micro-pauses between words/breaths that a
+    # repetitive physical motion doesn't. There's no way to tell "wiping
+    # a face" from "talking" out of pixel motion alone without lip
+    # landmarks. The one signal that did distinguish them here: the real
+    # speaker was detected in EVERY sample across the whole segment,
+    # while the tissue-wiping track only started appearing partway
+    # through (the face detector likely missed it earlier - head down,
+    # hand over the lower face). len(confidences) (how many samples this
+    # track was matched in at all) goes first, ahead of best_run - a
+    # track present for the segment's full span is a safer bet than one
+    # that appears mid-way, even if the latecomer's motion looks more
+    # "sustained" by the numbers. Ties (the common case - most speaker
+    # pairs are both visible from the first sample) fall through to
+    # best_run exactly as before.
+    winner = max(tracks, key=lambda track: (len(track["confidences"]), track["best_run"], track["talk_hits"], track["motion"]))
     center_x = winner["cx"]
     avg_confidence = sum(winner["confidences"]) / len(winner["confidences"])
 
@@ -338,4 +413,34 @@ def find_crop_segments(video_path, start_time, end_time, crop_width=1080, crop_h
         result["endTime"] = seg_end
         segments.append(result)
 
+    _fill_unfound_from_neighbors(segments)
     return segments
+
+
+# A real bug found in production (see CLAUDE.md, 2026-09-10, clip
+# `boas-escolhas-mudam-o-pais`): a segment can come back with found=False
+# just because face detection happened to miss on every one of its own
+# samples (motion blur, an awkward angle, a face at the frame's edge) even
+# though the SAME footage is a continuous conversation where the segments
+# right before and after it both found a face fine. The caller's only
+# fallback for found=False was a dead-center crop of the full (often
+# multi-person) wide shot - confirmed against a real clip where that
+# produced exactly the bug being investigated: the crop centered on
+# whoever happened to be dead-center in a 3-person shot, cutting the
+# actual, visibly-talking speaker to a sliver at the frame's edge for the
+# segment's whole duration. A short segment failing detection is far more
+# likely to be "same speaker, bad luck on samples" than "the framing
+# genuinely needs to jump to the geometric center" - so reuse the nearest
+# neighboring segment's xOffset (by time distance, either direction)
+# instead. `found` is left as-is (it still means "this segment's own
+# samples found a face") - only xOffset is backfilled, and only when at
+# least one segment in the clip actually found something to borrow from.
+def _fill_unfound_from_neighbors(segments):
+    found_indices = [i for i, s in enumerate(segments) if s.get("found")]
+    if not found_indices:
+        return
+    for i, seg in enumerate(segments):
+        if seg.get("found"):
+            continue
+        nearest = min(found_indices, key=lambda j: abs(j - i))
+        seg["xOffset"] = segments[nearest]["xOffset"]
