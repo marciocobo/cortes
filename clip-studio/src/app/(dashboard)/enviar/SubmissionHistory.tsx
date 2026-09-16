@@ -15,6 +15,13 @@ type Submission = {
   createdAt: string;
   updatedAt: string;
   submittedBy: { name: string };
+  // show-upload-progress spec: only meaningful while status is BAIXANDO for
+  // a direct file upload - null for YouTube-link submissions, or before the
+  // first progress snapshot is persisted. Prisma BigInt is patched to
+  // serialize as a decimal string over JSON (see lib/prisma.ts) rather than
+  // throwing or losing precision past Number.MAX_SAFE_INTEGER.
+  uploadedBytes: string | null;
+  totalBytes: string | null;
 };
 
 type Attempt = {
@@ -49,6 +56,34 @@ const STATUS_PILL_CLASS: Record<Submission["status"], string> = {
   CONCLUIDO: "pill pill-concluido",
   ERRO: "pill pill-erro",
 };
+
+// show-upload-progress spec: "Percentage shown while uploading" / "Progress
+// display stops once the transfer leaves Baixando" - null whenever there's
+// nothing meaningful to show (any status other than BAIXANDO, a YouTube-link
+// submission, or a direct upload before its first persisted snapshot), so
+// the caller can fall back to the plain status pill with no percentage.
+function uploadProgressPercent(s: Submission): number | null {
+  if (s.status !== "BAIXANDO" || !s.uploadedBytes || !s.totalBytes) return null;
+  const total = Number(s.totalBytes);
+  if (!(total > 0)) return null;
+  const uploaded = Number(s.uploadedBytes);
+  return Math.min(100, Math.max(0, Math.floor((uploaded / total) * 100)));
+}
+
+// How long a submission has been sitting in BAIXANDO, from createdAt (for a
+// direct file upload, createdAt IS the moment the transfer started - see
+// upload/route.ts) to now. Shown regardless of whether byte-level progress
+// is available (e.g. a YouTube-link download has no uploadedBytes/totalBytes
+// but "running for 12m" is still meaningful on its own).
+function elapsedLabel(s: Submission): string | null {
+  if (s.status !== "BAIXANDO") return null;
+  const ms = Date.now() - new Date(s.createdAt).getTime();
+  if (!(ms > 0)) return null;
+  const totalMinutes = Math.floor(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
 
 // Same hand-rolled inline-SVG icon style as VideoLibrary.tsx's ICON_PROPS -
 // see that file's comment for why (no icon library dependency for one icon).
@@ -283,6 +318,16 @@ export default function SubmissionHistory() {
                       </button>
                     ) : (
                       <span className={STATUS_PILL_CLASS[s.status]}>{STATUS_LABEL[s.status]}</span>
+                    )}
+                    {(uploadProgressPercent(s) !== null || elapsedLabel(s) !== null) && (
+                      <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                        {[
+                          uploadProgressPercent(s) !== null ? `${uploadProgressPercent(s)}%` : null,
+                          elapsedLabel(s),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
                     )}
                     {s.status === "ERRO" && (
                       <button

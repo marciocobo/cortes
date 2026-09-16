@@ -1,6 +1,33 @@
 import { prisma } from "@/lib/prisma";
 import { triggerIngestion } from "@/lib/n8n-client";
 
+// resumable-upload spec: a direct file upload can now sit in BAIXANDO
+// indefinitely while paused (chunk retries exhausted, waiting for the user
+// to resume - see api/submissions/upload/chunk and SubmitForm.tsx), instead
+// of always resolving to ERRO within one request's lifetime like the old
+// single-shot route did. Left unchecked, an abandoned upload (browser
+// closed for good, user never comes back) would permanently block the
+// YouTube-link queue below, since "at most one BAIXANDO at a time" has no
+// other way to move on. `updatedAt` advances on every successful chunk
+// (chunk route), so no activity for this long really does mean abandoned,
+// not just a slow connection - a healthy upload updates far more often
+// than this even on the flaky connection observed in production.
+const STALE_UPLOAD_MS = 60 * 60 * 1000; // 1h
+
+async function reapStaleDirectUploads(): Promise<void> {
+  await prisma.submission.updateMany({
+    where: {
+      status: "BAIXANDO",
+      youtubeUrl: null,
+      updatedAt: { lt: new Date(Date.now() - STALE_UPLOAD_MS) },
+    },
+    data: {
+      status: "ERRO",
+      errorReason: "Envio interrompido - sem atividade por mais de 1 hora.",
+    },
+  });
+}
+
 /**
  * Sequential download queue - see youtube-ingestion spec, "Downloads run
  * one at a time, in submission order", and design.md's "Sequential
@@ -12,6 +39,7 @@ import { triggerIngestion } from "@/lib/n8n-client";
  * Deployment topology), not multiple serverless instances.
  */
 export async function dispatchNextIfIdle(): Promise<void> {
+  await reapStaleDirectUploads();
   const inFlight = await prisma.submission.findFirst({ where: { status: "BAIXANDO" } });
   if (inFlight) return;
 

@@ -58,6 +58,13 @@ model Submission {
   status         SubmissionStatus @default(FILA)
   errorReason    String?
   uploadedFileName String?
+  // Transfer progress for a direct file upload while status = BAIXANDO (see
+  // show-upload-progress/design.md - Decisions). BigInt because observed
+  // uploads exceed Int's ~2.1GB ceiling. Both null for YouTube-link
+  // submissions, and left stale-but-unread once status moves past BAIXANDO -
+  // the UI only displays them while status is BAIXANDO.
+  uploadedBytes  BigInt?
+  totalBytes     BigInt?
   submittedById  String
   submittedBy    User             @relation(fields: [submittedById], references: [id])
   createdAt      DateTime         @default(now())
