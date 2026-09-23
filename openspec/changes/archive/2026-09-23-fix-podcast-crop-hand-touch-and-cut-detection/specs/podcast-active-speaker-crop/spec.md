@@ -1,10 +1,4 @@
-# podcast-active-speaker-crop Specification
-
-## Purpose
-
-Provides a face-detection service the podcast pipeline can call, outside the VPS's hardened ffmpeg/n8n image (which has no Python, no package manager, and no face-detection capability built in), to determine where in a landscape podcast frame the 9:16 crop should be centered so it keeps a visible face in frame instead of always cutting the geometric center.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Detect a usable face position for a clip's time range
 
@@ -69,23 +63,3 @@ The system SHALL detect a camera-angle cut occurring partway through a clip's ti
 #### Scenario: A same-room zoom or reframe is detected as a cut
 - **WHEN** the source recording's camera zooms or reframes (e.g. from a wide shot to a closer shot) within the same room and lighting, such that the overall color palette barely changes between the two framings but the composition/subject positioning changes substantially
 - **THEN** the system detects this as a camera cut and starts a new segment at that point, rather than treating the zoom/reframe as a continuation of the prior segment
-
-### Requirement: The pipeline never blocks on the detection service
-
-The system SHALL treat a call to the face-detection service as best-effort: an unreachable service, a timeout, or an error response SHALL NOT fail, skip, or indefinitely delay the clip being cut - the caller falls back to the pipeline's existing fixed center crop in every such case.
-
-#### Scenario: Detection service is unreachable
-- **WHEN** the podcast pipeline cannot reach the face-detection service (e.g. the sidecar container is down)
-- **THEN** the pipeline proceeds to cut the clip using the fixed center crop, without retrying indefinitely or failing the clip
-
-#### Scenario: Detection takes too long
-- **WHEN** the face-detection service does not respond within the pipeline's configured timeout for a clip
-- **THEN** the pipeline proceeds to cut that clip using the fixed center crop instead of waiting further
-
-### Requirement: Detection scope is limited to the podcast pipeline
-
-The system SHALL only be called by the podcast workflow; the Shorts ("Blocos") and Palavra Completa pipelines SHALL continue using their existing fixed center crop unchanged, since a single centered speaker does not have the off-center framing problem this capability addresses.
-
-#### Scenario: Shorts pipeline is unaffected
-- **WHEN** the Shorts ("Blocos") pipeline cuts a clip
-- **THEN** it uses the same fixed center crop it used before this capability existed, without calling the face-detection service
