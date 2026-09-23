@@ -118,10 +118,63 @@ _MOUTH_BOTTOM = 14
 _MOUTH_LEFT = 78
 _MOUTH_RIGHT = 308
 
+# A seventh bug found in production (see CLAUDE.md, 2026-09-18/19): even
+# with the MAR-based signal (2026-09-15 fix) and the best_run/talk_hits
+# ordering fix (2026-09-18), a track could still win on a single spurious
+# MAR delta caused by the PERSON'S OWN FINGER touching/covering their own
+# mouth or chin (a thinking gesture, scratching, resting a fist on the
+# jaw) - not occlusion by someone/something else blocking the view, but
+# the subject's own hand moving across their own lips between samples.
+# Face Mesh still returns lip landmark coordinates in that case (it doesn't
+# reliably fail to detect the way it does for a hand fully covering the
+# mouth), but the coordinates it returns are corrupted by the finger
+# partially overlapping the lip contour, producing a MAR delta
+# indistinguishable from a real mouth-opening. Confirmed in production
+# (clip `armadilha-na-reforma`, episode "podcast6"): a listener with arms
+# crossed / hand on chin for nearly the whole clip got a single MAR hit at
+# the exact instant a high-res frame shows his finger touching his own
+# lips - while the person actually talking that whole segment scored ZERO
+# hits because his own animated gesturing (genuinely speaking people move
+# their hands more) intermittently occluded his face from Face Mesh
+# entirely (mar=None), so the real speaker never got a chance to register
+# any hits at all in that specific sparse-sampled window. One fake hit beat
+# zero real hits. Fixed below (_hand_touching_mouth) by running MediaPipe
+# Hands on the same face crop and treating a sample as unmeasured (None,
+# same as occlusion) whenever any hand landmark falls near the mouth
+# region - a hand near the lips can no longer masquerade as speech, on
+# EITHER the toucher's own hand or someone else's, regardless of whether
+# Face Mesh still nominally returns coordinates.
+HAND_MOUTH_MARGIN_FRACTION = 0.6
+
 # See add-podcast-scene-segmented-crop/design.md - Decisions 1 and 4.
 CUT_SAMPLE_STEP = 2.0  # seconds between histogram samples when scanning for cuts
 CUT_HIST_DISTANCE_THRESHOLD = 0.5  # correlation distance (1 - correlation); higher = more different
-MAX_SEGMENTS = 4
+# Spatial grid _frame_histogram divides each sampled frame into before
+# computing per-cell histograms - see the 2026-09-19 comment on
+# _frame_histogram for why a single whole-frame histogram wasn't enough to
+# catch a camera zoom/reframe.
+CUT_GRID_COLS = 3
+CUT_GRID_ROWS = 2
+
+# _detect_cuts keeps only the MAX_SEGMENTS-1 STRONGEST candidate cuts
+# (sorted by histogram distance, weakest ones dropped) - originally 4,
+# sized for a simple 2-3-camera setup. A real production episode audited
+# on 2026-09-18 ("podcast6", multi-panelist roundtable cutting between at
+# least 3 distinct camera setups/backdrops within a single ~2min highlight
+# clip) showed this cap actively discarding real cuts: one highlight clip
+# had 6 segments after MAX_SEGMENT_DURATION splitting, meaning at least
+# that many real framing changes existed, while the histogram detector -
+# capped at 3 cuts - had already dropped weaker-but-real transitions
+# between similarly-lit shots in favor of the visually starkest ones.
+# Confirmed directly: a 17s segment that got ZERO cuts inside it (so one
+# static crop offset for its whole span) visibly contained a hard
+# transition between a solo close-up and an unrelated 3-person wide shot
+# on a different backdrop - the crop was necessarily wrong for whichever
+# half of the segment didn't match the single offset chosen. Raised to 8
+# so heavily-edited multi-camera content isn't capacity-limited on cuts;
+# MAX_SEGMENT_DURATION still bounds the worst case (a clip with fewer real
+# cuts than this cap just uses fewer segments, unchanged from before).
+MAX_SEGMENTS = 8
 
 # A camera cut isn't the only reason a single "winner" crop position can go
 # stale - a long, unbroken take (no cut detected) can still have several
@@ -132,6 +185,7 @@ MAX_SEGMENT_DURATION = 45.0
 
 _net = None
 _face_mesh = None
+_hands = None
 
 
 def _load_net():
@@ -156,6 +210,21 @@ def _load_face_mesh():
             min_detection_confidence=0.5,
         )
     return _face_mesh
+
+
+def _load_hands():
+    global _hands
+    if _hands is None:
+        # static_image_mode=True for the same reason as Face Mesh above.
+        # max_num_hands=2: the toucher's own other hand, or a second
+        # person's hand reaching into frame, can both be near this face's
+        # crop - see HAND_MOUTH_MARGIN_FRACTION comment for why this exists.
+        _hands = mp.solutions.hands.Hands(
+            static_image_mode=True,
+            max_num_hands=2,
+            min_detection_confidence=0.5,
+        )
+    return _hands
 
 
 def _detect_faces(frame_bgr):
@@ -214,8 +283,38 @@ def _mouth_aspect_ratio(frame_bgr, box):
     mouth_width = math.hypot((right.x - left.x) * cw, (right.y - left.y) * ch)
     if mouth_width < 1e-6:
         return None
+
+    if _hand_touching_mouth(crop, left, right, top, bottom, cw, ch, mouth_width):
+        return None
+
     mouth_gap = math.hypot((bottom.x - top.x) * cw, (bottom.y - top.y) * ch)
     return mouth_gap / mouth_width
+
+
+def _hand_touching_mouth(crop, left, right, top, bottom, cw, ch, mouth_width):
+    """True if any detected hand landmark falls within a margin of the
+    mouth's own bounding box - see the 2026-09-18/19 comment above
+    HAND_MOUTH_MARGIN_FRACTION for the production bug this closes. Runs
+    MediaPipe Hands on the SAME padded face crop _mouth_aspect_ratio already
+    cropped (small image, and irrelevant hands elsewhere in a wide shot are
+    naturally excluded by the crop itself - only a hand near THIS face's
+    mouth can trigger this)."""
+    hands_result = _load_hands().process(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+    if not hands_result.multi_hand_landmarks:
+        return False
+
+    xs = (left.x, right.x, top.x, bottom.x)
+    ys = (left.y, right.y, top.y, bottom.y)
+    margin = mouth_width * HAND_MOUTH_MARGIN_FRACTION
+    mx1, mx2 = min(xs) * cw - margin, max(xs) * cw + margin
+    my1, my2 = min(ys) * ch - margin, max(ys) * ch + margin
+
+    for hand_landmarks in hands_result.multi_hand_landmarks:
+        for lm in hand_landmarks.landmark:
+            px, py = lm.x * cw, lm.y * ch
+            if mx1 <= px <= mx2 and my1 <= py <= my2:
+                return True
+    return False
 
 
 def _sample_timestamps(start, end, count):
@@ -366,15 +465,46 @@ def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_h
     # 2026-09-15 fix) - a hand/tissue over the mouth makes Face Mesh find no
     # landmarks at all, so it can no longer accumulate any best_run/motion
     # in the first place, regardless of how sustained the physical motion
-    # is. len(confidences) (how many samples this track was matched in at
-    # all) is still kept as the FIRST tiebreak ahead of best_run, for a
-    # separate reason unrelated to the tissue case: a track only detected
-    # partway through the segment (face detector missed it earlier - head
-    # down, bad angle) is a less reliable read than one present the whole
-    # span, even with equally strong MAR signal. Ties (the common case -
-    # most speaker pairs are both visible from the first sample) fall
-    # through to best_run exactly as before.
-    winner = max(tracks, key=lambda track: (len(track["confidences"]), track["best_run"], track["talk_hits"], track["motion"]))
+    # is.
+    #
+    # A fifth bug found in production (see CLAUDE.md, 2026-09-18, podcast
+    # episode "podcast6" - clip `armadilha-na-reforma`, segment tracking a
+    # panelist who spends the whole window checking his phone and rubbing
+    # his face while someone else at the table keeps talking off-camera):
+    # len(confidences) used to be the FIRST tiebreak, ahead of best_run -
+    # meaning a track that's detected in every single sample ALWAYS beat a
+    # track with genuine, strong talk signal but one or two missed
+    # detections. That ordering is backwards for exactly the people this
+    # detector cares about: someone actively talking gestures and turns
+    # their head, which is what CAUSES occasional detection misses (motion
+    # blur, a profile angle) - while someone silently sitting still with a
+    # phone is the easiest face for the DNN to detect consistently. Ranking
+    # by raw detection count first systematically favored the passive,
+    # still face over the genuinely talking one whenever the talking
+    # person's motion cost them a sample or two. Fixed by moving best_run/
+    # talk_hits ahead of len(confidences) - detection count is now only a
+    # tiebreak among tracks that are comparable on actual speech signal,
+    # not a veto over it.
+    #
+    # A sixth, related bug: when NO track shows any measurable mouth
+    # movement at all (best_run/talk_hits all zero for every track - e.g.
+    # a quiet beat where whoever's on camera is listening, not talking),
+    # the old code still picked a "winner" via len(confidences)/motion,
+    # which is not a signal of who's talking at all in that case - it's
+    # just whoever's face was easiest to detect. With more than one
+    # candidate in frame, that's a coin flip dressed up as a decision. Now,
+    # when there are multiple tracks AND none of them has any talk_hits,
+    # this segment is reported as found=False instead of guessing - the
+    # caller's _fill_unfound_from_neighbors then reuses the nearest
+    # segment's already-validated offset, which is a better bet than
+    # picking a face at random just because it was easy to detect. A
+    # single-track segment (only one person in frame at all) is exempted
+    # from this check: there's no WHO ambiguity to resolve when nobody else
+    # is a candidate, so a quiet pause shouldn't discard an otherwise-fine
+    # single-subject crop.
+    if len(tracks) > 1 and max(t["talk_hits"] for t in tracks) == 0:
+        return {"found": False}
+    winner = max(tracks, key=lambda track: (track["best_run"], track["talk_hits"], len(track["confidences"]), track["motion"]))
     center_x = winner["cx"]
     avg_confidence = sum(winner["confidences"]) / len(winner["confidences"])
 
@@ -398,18 +528,64 @@ def find_crop_position(video_path, start_time, end_time, crop_width=1080, crop_h
 
 def _frame_histogram(frame_bgr):
     """A cheap per-frame fingerprint for cut detection - HSV hue/saturation
-    histogram, normalized so lighting-only changes within the SAME shot
-    don't dominate the comparison as much as a raw BGR histogram would."""
+    histograms over a CUT_GRID_COLS x CUT_GRID_ROWS spatial grid,
+    concatenated into one vector, rather than a single whole-frame
+    histogram.
+
+    An eighth bug found in production (see CLAUDE.md, 2026-09-18/19): a
+    real camera zoom/reframe within what the cut detector treated as one
+    unbroken take (wide 5-person establishing shot <-> close 2-shot, same
+    room, same people, same lighting) left the GLOBAL color distribution
+    almost unchanged - a whole-frame histogram is blind to WHERE color mass
+    sits in the frame, only how much of each color exists overall, so it
+    missed this as a cut entirely. That let one static crop offset span two
+    completely different compositions, and - more damaging - let
+    _match_faces_to_tracks (which assumes a static camera, see
+    TRACK_MATCH_FRACTION) silently splinter one real person's face across
+    multiple tracks as their pixel position jumped between framings,
+    corrupting the best_run/talk_hits comparison between tracks even though
+    each individual MAR reading was correct. Splitting into cells makes the
+    comparison sensitive to composition, not just overall color palette - a
+    reframe moves color mass between cells even when frame-wide totals
+    barely move, so this segment gets split at the reframe point instead of
+    analyzed as one window (same downstream fix pattern already proven for
+    missed hard cuts - see MAX_SEGMENTS)."""
     hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
-    hist = cv2.calcHist([hsv], [0, 1], None, [50, 60], [0, 180, 0, 256])
-    cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-    return hist
+    h, w = hsv.shape[:2]
+    cell_h, cell_w = h // CUT_GRID_ROWS, w // CUT_GRID_COLS
+    cells = []
+    for r in range(CUT_GRID_ROWS):
+        y1 = r * cell_h
+        y2 = h if r == CUT_GRID_ROWS - 1 else y1 + cell_h
+        for c in range(CUT_GRID_COLS):
+            x1 = c * cell_w
+            x2 = w if c == CUT_GRID_COLS - 1 else x1 + cell_w
+            cell = hsv[y1:y2, x1:x2]
+            hist = cv2.calcHist([cell], [0, 1], None, [25, 30], [0, 180, 0, 256])
+            cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+            cells.append(hist.flatten())
+    return np.concatenate(cells)
+
+
+def _hist_distance(hist_a, hist_b):
+    """1 - Pearson correlation between two flattened grid histograms - same
+    distance semantics as the old cv2.compareHist(..., HISTCMP_CORREL) call
+    this replaces, computed manually since the histogram is now a
+    concatenated multi-cell vector rather than a single 2D cv2 histogram
+    (see _frame_histogram)."""
+    denom = np.std(hist_a) * np.std(hist_b)
+    if denom < 1e-12:
+        return 0.0
+    correlation = float(np.mean((hist_a - hist_a.mean()) * (hist_b - hist_b.mean())) / denom)
+    return 1.0 - correlation
 
 
 def _detect_cuts(cap, start_time, end_time, step=CUT_SAMPLE_STEP):
     """Returns a sorted list of timestamps where consecutive sampled frames'
     histograms differ enough to call it a camera cut - see design.md
-    Decision 1 for why histogram distance instead of ffmpeg's scdet."""
+    Decision 1 for why histogram distance instead of ffmpeg's scdet, and
+    the 2026-09-19 comment on _frame_histogram for why this is now a
+    spatial-grid comparison instead of a whole-frame one."""
     if end_time - start_time < step * 2:
         return []
 
@@ -422,8 +598,7 @@ def _detect_cuts(cap, start_time, end_time, step=CUT_SAMPLE_STEP):
         if frame is not None:
             hist = _frame_histogram(frame)
             if prev_hist is not None:
-                correlation = cv2.compareHist(prev_hist, hist, cv2.HISTCMP_CORREL)
-                distance = 1.0 - correlation
+                distance = _hist_distance(prev_hist, hist)
                 if distance >= CUT_HIST_DISTANCE_THRESHOLD:
                     # the cut lies between prev_t and t - use the midpoint
                     candidates.append((distance, (prev_t + t) / 2.0))
