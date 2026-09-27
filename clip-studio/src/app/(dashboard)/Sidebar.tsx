@@ -11,6 +11,12 @@ const ALL_LINKS = [
   { href: "/admin/configuracoes", label: "Configurações", roles: ["ADMIN"] },
 ] as const;
 
+const ROLE_LABEL: Record<Role, string> = {
+  CLIPADOR: "Clipador",
+  UPLOADER: "Uploader",
+  ADMIN: "Admin",
+};
+
 export default function Sidebar({
   role,
   name,
@@ -50,7 +56,7 @@ export default function Sidebar({
         <div className="user-box">
           <div style={{ marginBottom: 4 }}>{name}</div>
           <div style={{ color: "var(--accent-blue)", fontSize: "0.75rem", fontWeight: 600 }}>
-            {role}
+            {ROLE_LABEL[role]}
           </div>
           <LogoutButton />
         </div>

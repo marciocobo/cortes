@@ -9,7 +9,7 @@ type Submission = {
   // YouTube link - see video-upload-ingestion spec.
   youtubeUrl: string | null;
   title: string;
-  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
+  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST" | "LOUVOR";
   status: "FILA" | "BAIXANDO" | "PROCESSANDO" | "CONCLUIDO" | "ERRO";
   errorReason: string | null;
   createdAt: string;
@@ -39,6 +39,7 @@ const CONTENT_TYPE_LABEL: Record<Submission["mode"], string> = {
   SHORTS: "Pregação",
   PALAVRA_COMPLETA: "Pregação",
   PODCAST: "Podcast",
+  LOUVOR: "Louvor",
 };
 
 const STATUS_LABEL: Record<Submission["status"], string> = {

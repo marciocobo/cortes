@@ -33,6 +33,10 @@ enum SubmissionMode {
   SHORTS
   PALAVRA_COMPLETA
   PODCAST
+  // add-video-type-category-filters: reserved - no pipeline or submission
+  // path uses it yet, added now so a future Louvor pipeline needs no
+  // further migration (see that change's design.md).
+  LOUVOR
 }
 
 model User {

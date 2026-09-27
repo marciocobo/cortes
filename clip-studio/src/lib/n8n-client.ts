@@ -37,7 +37,23 @@ export type ClipSummary = {
   // pipeline's output folder (Videos-Cortes/Podcast/Cortes) - same
   // sourceFolder-tag mechanism as isFullWord.
   isPodcast: boolean;
+  // add-video-type-category-filters: content type for the library's "Tipo"
+  // filter/badge, derived from the same sourceFolder tag. isFullWord stays
+  // separate - Palavra Completa is a format variant of PREGACAO, not a
+  // sibling content type.
+  contentType: ContentType;
 };
+
+export type ContentType = "PREGACAO" | "LOUVOR" | "PODCAST";
+
+function contentTypeFromSourceFolder(sourceFolder: string | undefined): ContentType {
+  if (sourceFolder === "Podcast/Cortes") return "PODCAST";
+  // Reserved by add-video-type-category-filters: no pipeline writes to
+  // Videos-Cortes/Louvor/Cortes yet, so this branch is unreachable today.
+  if (sourceFolder === "Louvor/Cortes") return "LOUVOR";
+  // "Cortes" (Shorts) and "PalavraCompleta/Cortes".
+  return "PREGACAO";
+}
 
 class N8nNotConfiguredError extends Error {
   constructor() {
@@ -202,11 +218,18 @@ type ClipMetaJson = {
  * fetch - the meta file's own `@microsoft.graph.downloadUrl` is already a
  * pre-authenticated temporary URL, no credential needed to read it.
  */
-export async function listClips(): Promise<ClipSummary[]> {
+export async function listClips(type?: ContentType): Promise<ClipSummary[]> {
   const result = await callWebhook<{ value: GraphDriveItem[] }>("clip-studio/clips", {});
   const items = result.value ?? [];
 
-  const mp4Items = items.filter((i) => i.name.toLowerCase().endsWith(".mp4"));
+  // add-video-type-category-filters: when a content type is requested, drop
+  // the other types' clips BEFORE the per-clip _meta.json fetches below (the
+  // N+1 Graph pattern), so opening one type only pays for that type's clips.
+  const mp4Items = items.filter(
+    (i) =>
+      i.name.toLowerCase().endsWith(".mp4") &&
+      (type === undefined || contentTypeFromSourceFolder(i.sourceFolder) === type)
+  );
   const metaByStem = new Map<string, GraphDriveItem>();
   for (const item of items) {
     if (item.name.toLowerCase().endsWith("_meta.json")) {
@@ -301,6 +324,7 @@ export async function listClips(): Promise<ClipSummary[]> {
         edited,
         isFullWord: mp4.sourceFolder === "PalavraCompleta/Cortes",
         isPodcast: mp4.sourceFolder === "Podcast/Cortes",
+        contentType: contentTypeFromSourceFolder(mp4.sourceFolder),
         videoSource: meta?.videoSource ?? null,
       };
     })
@@ -412,7 +436,7 @@ export async function trimClip(
  */
 export async function isOriginalArchived(
   uploadedFileName: string,
-  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST" = "SHORTS"
+  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST" | "LOUVOR" = "SHORTS"
 ): Promise<boolean> {
   const result = await callWebhook<{ archived: boolean }>("clip-studio/videos/check-archived", {
     fileName: uploadedFileName,
@@ -430,7 +454,7 @@ export async function triggerIngestion(params: {
   // decision 2. Defaults to "SHORTS" so a caller that predates this field
   // keeps today's behavior. add-podcast-clipping-mode adds "PODCAST" as a
   // third, equally independent value (design.md decision 1).
-  mode?: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
+  mode?: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST" | "LOUVOR";
 }): Promise<void> {
   await callWebhook("clip-studio/ingest", { mode: "SHORTS", ...params });
 }
@@ -464,7 +488,7 @@ export async function triggerIngestion(params: {
 export async function triggerUploadIngestion(params: {
   submissionId: string;
   title: string;
-  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
+  mode: "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST" | "LOUVOR";
   fileName: string;
   contentType: string;
   // n8n's webhook trigger only captures the request body into

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { ClipSummary } from "@/lib/n8n-client";
+import type { ClipSummary, ContentType } from "@/lib/n8n-client";
 
 // video-library spec: video-card action icons - the prototype replaced the
 // old text buttons (Cortar/Renomear/Excluir) with plain circular icon
@@ -198,6 +198,15 @@ function clipStatus(
 const STATUS_FILTERS = ["Original", "Cortado", "Processando"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
+// video-library spec: "Filter clips by content type" - a Tipo must be picked
+// before any clip is shown; Categoria (status) is gated behind it. The badge
+// colors match the mockup.
+const TYPE_FILTERS: { value: ContentType; label: string; color: string }[] = [
+  { value: "PREGACAO", label: "Pregação", color: "#8fa8f7" },
+  { value: "LOUVOR", label: "Louvor", color: "#7ed3a8" },
+  { value: "PODCAST", label: "Podcast", color: "#e9a468" },
+];
+
 function filterBucket(clip: ClipSummary, isProcessing: boolean): StatusFilter {
   if (isProcessing) return "Processando";
   if (clip.edited) return "Cortado";
@@ -223,7 +232,11 @@ function VideoGridSkeleton() {
 }
 
 export default function VideoLibrary() {
-  const [clips, setClips] = useState<ClipSummary[] | null>(null);
+  // Clips cached per Tipo: each Tipo is fetched once, the first time it's
+  // picked, and switching back to an already-loaded Tipo reuses it instead
+  // of refetching (only refresh-on-focus / rename / delete / trim reload,
+  // and only the currently selected Tipo).
+  const [clipsByType, setClipsByType] = useState<Partial<Record<ContentType, ClipSummary[]>>>({});
   const [error, setError] = useState<string | null>(null);
   const [renamingClip, setRenamingClip] = useState<ClipSummary | null>(null);
   const [deletingClip, setDeletingClip] = useState<ClipSummary | null>(null);
@@ -231,19 +244,61 @@ export default function VideoLibrary() {
   const [cuttingClip, setCuttingClip] = useState<ClipSummary | null>(null);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<"recent" | "oldest">("recent");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("Original");
+  const [typeFilter, setTypeFilter] = useState<ContentType | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter | null>(null);
 
-  async function load() {
+  // The current Tipo, mirrored in a ref so load() (called from async
+  // callbacks and window listeners) never reads a stale closure value.
+  const typeRef = useRef<ContentType | null>(null);
+
+  // video-library spec: clips are only fetched once a Tipo is picked, and
+  // only that Tipo's clips (?type=) - never the whole library up front.
+  // Tipos whose last fetch failed - selecting one again retries it instead
+  // of trusting an empty cache entry.
+  const failedTypesRef = useRef<Set<ContentType>>(new Set());
+
+  // Updates the CURRENT Tipo's clips (used by the trim flow's in-place patches).
+  function setClips(
+    update: ClipSummary[] | null | ((prev: ClipSummary[] | null) => ClipSummary[] | null)
+  ) {
+    const type = typeRef.current;
+    if (type === null) return;
+    setClipsByType((map) => {
+      const next = typeof update === "function" ? update(map[type] ?? null) : update;
+      return { ...map, [type]: next ?? undefined };
+    });
+  }
+
+  async function load(type: ContentType | null = typeRef.current) {
+    if (type === null) return;
+    // Only ever called from event handlers/async callbacks, never during render
+    // (the purity rule can't see that through the header JSX's onClick).
+    // eslint-disable-next-line react-hooks/purity
     lastLoadRef.current = Date.now();
     setError(null);
     try {
-      const res = await fetch("/api/clips");
+      const res = await fetch(`/api/clips?type=${type}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Falha ao carregar vídeos");
-      setClips(data.clips);
+      failedTypesRef.current.delete(type);
+      // Cached under ITS Tipo even if the user already switched away, so
+      // coming back to it later is instant.
+      setClipsByType((map) => ({ ...map, [type]: data.clips }));
     } catch (err) {
+      failedTypesRef.current.add(type);
+      if (typeRef.current !== type) return;
       setError(err instanceof Error ? err.message : "Falha ao carregar vídeos");
-      setClips([]);
+      setClipsByType((map) => ({ ...map, [type]: [] }));
+    }
+  }
+
+  function selectType(type: ContentType | null) {
+    typeRef.current = type;
+    setTypeFilter(type);
+    setStatusFilter(null);
+    setError(null);
+    if (type !== null && (clipsByType[type] === undefined || failedTypesRef.current.has(type))) {
+      load(type);
     }
   }
 
@@ -355,14 +410,6 @@ export default function VideoLibrary() {
 
   const lastLoadRef = useRef(0);
 
-  useEffect(() => {
-    // load() sets state from the fetch response (an external system), not
-    // synchronously in the effect body itself - the async gap is the
-    // legitimate case react-hooks/set-state-in-effect's own docs call out.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, []);
-
   // Rename/delete/trim already refresh via load() right after they finish
   // in THIS tab - this covers changes made elsewhere (another tab, another
   // session, or a trim that finished after the user tabbed away) so
@@ -377,6 +424,7 @@ export default function VideoLibrary() {
   useEffect(() => {
     const MIN_INTERVAL_MS = 2 * 60 * 1000;
     function refreshIfDue() {
+      if (typeRef.current === null) return;
       if (Date.now() - lastLoadRef.current < MIN_INTERVAL_MS) return;
       lastLoadRef.current = Date.now();
       load();
@@ -469,18 +517,50 @@ export default function VideoLibrary() {
           <option value="oldest">Data: mais antiga</option>
         </select>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {STATUS_FILTERS.map((filter) => {
-          const active = statusFilter === filter;
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 12, color: "#a3a3b3", minWidth: 68 }}>Tipo</span>
+        {TYPE_FILTERS.map((filter) => {
+          const active = typeFilter === filter.value;
           return (
             <button
-              key={filter}
-              onClick={() => setStatusFilter(filter)}
+              key={filter.value}
+              onClick={() => {
+                // Clicking the active pill again clears Tipo AND Categoria
+                // (Categoria is meaningless without a Tipo).
+                selectType(active ? null : filter.value);
+              }}
               style={{
                 borderRadius: 100,
                 padding: "6px 14px",
                 fontSize: 12,
                 cursor: "pointer",
+                background: active ? "#fcfcfc" : "transparent",
+                color: active ? "#0a0a13" : "#a3a3b3",
+                border: active ? "none" : "1px solid #2a2a32",
+              }}
+            >
+              {filter.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        <span style={{ fontSize: 12, color: "#a3a3b3", minWidth: 68 }}>Categoria</span>
+        {STATUS_FILTERS.map((filter) => {
+          const active = statusFilter === filter;
+          const disabled = typeFilter === null;
+          return (
+            <button
+              key={filter}
+              disabled={disabled}
+              title={disabled ? "Selecione um tipo primeiro" : undefined}
+              onClick={() => setStatusFilter(active ? null : filter)}
+              style={{
+                borderRadius: 100,
+                padding: "6px 14px",
+                fontSize: 12,
+                cursor: disabled ? "not-allowed" : "pointer",
+                opacity: disabled ? 0.4 : 1,
                 background: active ? "#fcfcfc" : "transparent",
                 color: active ? "#0a0a13" : "#a3a3b3",
                 border: active ? "none" : "1px solid #2a2a32",
@@ -493,6 +573,17 @@ export default function VideoLibrary() {
       </div>
     </>
   );
+
+  const clips = typeFilter === null ? null : (clipsByType[typeFilter] ?? null);
+
+  if (typeFilter === null) {
+    return (
+      <div>
+        {header}
+        <p className="empty-state">Selecione um tipo para ver os vídeos.</p>
+      </div>
+    );
+  }
 
   if (clips === null) {
     return (
@@ -516,7 +607,9 @@ export default function VideoLibrary() {
     return (
       <div>
         {header}
-        <p className="empty-state">Nenhum clipe gerado ainda.</p>
+        <p className="empty-state">
+          Nenhum vídeo encontrado em {TYPE_FILTERS.find((f) => f.value === typeFilter)?.label}.
+        </p>
       </div>
     );
   }
@@ -526,16 +619,24 @@ export default function VideoLibrary() {
     const bTime = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
     return sortBy === "oldest" ? aTime - bTime : bTime - aTime;
   });
+  // No clip is shown until a Tipo is picked; Categoria only narrows further
+  // when set (null = every status within the type).
   const filteredClips = sortedClips.filter(
-    (clip) => filterBucket(clip, processingIds.has(clip.itemId)) === statusFilter
+    (clip) =>
+      clip.contentType === typeFilter &&
+      (statusFilter === null || filterBucket(clip, processingIds.has(clip.itemId)) === statusFilter)
   );
+  const typeLabel = TYPE_FILTERS.find((f) => f.value === typeFilter)?.label;
 
   return (
     <div>
       {header}
       {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
       {filteredClips.length === 0 ? (
-        <p className="empty-state">Nenhum clipe com status &quot;{statusFilter}&quot;.</p>
+        <p className="empty-state">
+          Nenhum vídeo encontrado
+          {statusFilter ? ` com status "${statusFilter}"` : ""} em {typeLabel}.
+        </p>
       ) : (
       <div className="video-grid">
         {filteredClips.map((clip) => {
@@ -553,20 +654,34 @@ export default function VideoLibrary() {
                 <span className="duration-badge">{formatDuration(clip.durationSeconds)}</span>
               </div>
               <div className="body">
+                {(() => {
+                  const type = TYPE_FILTERS.find((f) => f.value === clip.contentType);
+                  return (
+                    type && (
+                      <span
+                        className="clip-status-pill"
+                        style={{
+                          marginBottom: 4,
+                          marginRight: 4,
+                          display: "inline-block",
+                          background: type.color,
+                          color: "#0a0a13",
+                        }}
+                      >
+                        {type.label}
+                      </span>
+                    )
+                  );
+                })()}
+                {/* Palavra Completa is a format variant of Pregação, kept as
+                    its own pill next to the type badge (deliberate divergence
+                    from the mockup's single-badge card - see design.md). */}
                 {clip.isFullWord && (
                   <span
                     className="clip-status-pill"
                     style={{ marginBottom: 4, display: "inline-block", background: "#6199f6", color: "#0a0a13" }}
                   >
                     Palavra Completa
-                  </span>
-                )}
-                {clip.isPodcast && (
-                  <span
-                    className="clip-status-pill"
-                    style={{ marginBottom: 4, display: "inline-block", background: "#f6a061", color: "#0a0a13" }}
-                  >
-                    Podcast
                   </span>
                 )}
                 <p className="name">{clip.hook || clip.name}</p>
