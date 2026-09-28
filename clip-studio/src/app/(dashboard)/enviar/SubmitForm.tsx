@@ -3,12 +3,15 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type ContentType = "PREGACAO" | "PODCAST";
+type ContentType = "PREGACAO" | "PODCAST" | "LOUVOR";
 type SourceType = "link" | "file";
-type SubmissionMode = "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST";
+type SubmissionMode = "SHORTS" | "PALAVRA_COMPLETA" | "PODCAST" | "LOUVOR";
 
 function resolveMode(contentType: ContentType, fullWordMode: boolean): SubmissionMode {
   if (contentType === "PODCAST") return "PODCAST";
+  // add-louvor-clipping-mode: Louvor has its own n8n pipeline (full songs +
+  // highlight Shorts), so like Podcast it maps straight to a single mode.
+  if (contentType === "LOUVOR") return "LOUVOR";
   return fullWordMode ? "PALAVRA_COMPLETA" : "SHORTS";
 }
 
@@ -284,6 +287,15 @@ export default function SubmitForm() {
           >
             Podcast
           </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={contentType === "LOUVOR"}
+            className={contentType === "LOUVOR" ? "pill-toggle pill-toggle-active" : "pill-toggle"}
+            onClick={() => setContentType("LOUVOR")}
+          >
+            Louvor
+          </button>
         </div>
       </div>
 
@@ -363,9 +375,9 @@ export default function SubmitForm() {
         </div>
       )}
 
-      {/* Palavra Completa only applies to Pregação - Podcast is always the
-          multi-clip format (see design.md decision 2). Hiding this toggle
-          when Podcast is selected instead of leaving it visible-but-inert
+      {/* Palavra Completa only applies to Pregação - Podcast and Louvor
+          have their own fixed formats (see design.md decision 2). Hiding
+          this toggle for them instead of leaving it visible-but-inert
           avoids offering a choice that doesn't mean anything for that
           content type. */}
       {contentType === "PREGACAO" && (

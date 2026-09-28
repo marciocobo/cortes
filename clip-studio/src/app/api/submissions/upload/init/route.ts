@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     if (!fileName) {
       return NextResponse.json({ error: "Nome do arquivo ausente" }, { status: 400 });
     }
-    if (mode !== "SHORTS" && mode !== "PALAVRA_COMPLETA" && mode !== "PODCAST") {
+    if (mode !== "SHORTS" && mode !== "PALAVRA_COMPLETA" && mode !== "PODCAST" && mode !== "LOUVOR") {
       return NextResponse.json({ error: "Modo inválido" }, { status: 400 });
     }
     // Same check the old single-shot route made from the live request's

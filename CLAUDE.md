@@ -12,6 +12,46 @@ Após cada mudança no HTML, o usuário precisa **reimportar o JSON gerado no n8
 
 ## Estado atual (julho/2026)
 
+**Modo Louvor adicionado (28/09/2026, change OpenSpec `add-louvor-clipping-mode`):** a pedido do usuário, um quarto pipeline de cortes, só para louvor. A partir do vídeo de um **culto completo**, ele gera **1 clipe por música completa** e também **Shorts dos melhores trechos** (refrão/clímax), tudo em **9:16 com crop central**.
+
+- **Workflow n8n novo `LvrCortesMusica1`** ("YouTube Louvor — Extração de Músicas e Trechos", 41 nodes):
+  - é uma cópia estrutural do Podcast;
+  - foi criado via `n8n import:workflow` dentro do container, e não via MCP, porque o MCP só cria workflow a partir de código SDK;
+  - usa fila `Videos-Cortes/Louvor`, saída `Videos-Cortes/Louvor/Cortes` e arquivo `Videos-Cortes/Louvor/Videos`, todas criadas de forma idempotente a cada execução;
+  - usa a mesma trava `.processing.lock`, Schedule Trigger de 30 min e self-chaining.
+- **Pipeline:**
+  - whisper `-mc 0`;
+  - "Mesclar Pausas Curtas Louvor" marca `transcriptSuspect` quando há segmento com mais de 10 min ou a mesma linha repetida mais de 30 vezes, sem abortar;
+  - a 1ª IA só classifica a fase de cada bloco;
+  - "Ranking dos Blocos Louvor" mantém só `fase === 'louvor'`, em código;
+  - com zero louvor, o IF "Louvor Encontrado?" leva ao arquivamento com liberação da trava e termina com sucesso, sem trava órfã;
+  - a 2ª IA recebe só a transcrição dos intervalos de louvor (±90s) e devolve `songs[{title,start,end,highlights[]}]`;
+  - "Montar Clipes Louvor" valida as regras duras em código:
+    - música com pelo menos 60s e sem teto;
+    - trecho com 30 a 180s, contido na música;
+    - gap de 15s entre trechos;
+    - sem overlap entre músicas;
+    - no máximo 2 trechos por música.
+- **Corte:** o FFmpeg usa o snap e o clamp dos Shorts, com o arquivo de estado do clamp separado por tipo (`.prev_clip_real_end_musica`/`_trecho`). A música completa tem `MAXEND = clipEnd + 20`. **Não há filtro de áudio**, porque a música é o conteúdo.
+- **Arquivos gerados:** `louvor_musica_XX_slug.mp4` e `louvor_trecho_XX_slug.mp4`, com o `_meta.json` levando `kind`.
+- **Ingestão (`mfqp4D5HKs0MNhv1`):**
+  - as 3 normalizações passaram a aceitar `LOUVOR`;
+  - o IF "Rotear Louvor" entrou **entre** "Rotear Podcast" (saída falsa) e o ramo Shorts "Resolver Pasta Videos-Cortes";
+  - o upload direto ganhou os lookups de pasta e `workflowId`;
+  - a listagem ganhou `Louvor/Cortes` e a checagem de arquivamento ganhou `Louvor/Videos/`.
+  - Um diff nó a nó contra um snapshot anterior confirmou que os ramos Shorts, Palavra Completa e Podcast ficaram intactos. Os webhooks `clip-studio/clips` e `check-archived` foram testados com HTTP 200.
+- **Clip Studio:**
+  - pill "Louvor" em "Tipo de conteúdo", para link e para upload, sem o toggle Palavra Completa;
+  - zod e `upload/init` aceitam `LOUVOR`;
+  - `isFullSong` em `n8n-client.ts` e badge "Música completa" na biblioteca.
+  - Sem migration: o enum `LOUVOR` já existia.
+  - Deploy feito na VPS.
+- **Fixes transversais agora precisam ir para 4 pipelines:** Blocos, Palavra Completa, Podcast e Louvor.
+- **Lições operacionais desta sessão:**
+  - o `get_workflow_details` do MCP **omite `credentials`** dos nodes; para conferir credenciais, consulte `workflow_entity.nodes` no `database.sqlite` da VPS;
+  - no `compose` do Clip Studio, **não use `--remove-orphans`**, porque ele removeria o `podcast-crop-detector-1`, que aparece como órfão desse projeto.
+- **Ainda não validado com um culto real.** Faltam os smoke tests por link e por upload, a auditoria com o `clipador` e a checagem de regressão (tarefas 5.x da change).
+
 **Troca de sinal no crop do Podcast — diff de pixel bruto substituído por landmarks faciais reais, MediaPipe Face Mesh (15/09/2026):** a pedido do usuário ("como consigo garantir que o corte será feito somente para quem está falando?"), em vez de mais uma camada de heurística de desempate (padrão que já tinha se repetido 3 vezes no mesmo dia, ver bloco "Padrão que se repete" logo abaixo), o sinal de "quem fala" em `podcast-crop-detector/src/detector.py` foi trocado de raiz.
 
 - **O que mudou:** a antiga `_mouth_roi_gray()` (recorte fixo da região da boca + diff de pixel em escala de cinza entre amostras) foi substituída por `_mouth_aspect_ratio()` (MediaPipe Face Mesh, landmarks reais dos lábios — pontos 13/14 topo/base do lábio interno, 78/308 cantos da boca). O sinal por amostra deixou de ser "quanto essa região de pixels mudou" e passou a ser MAR (Mouth Aspect Ratio = abertura vertical dos lábios / largura da boca), uma razão adimensional (não depende de distância da câmera nem tamanho do rosto). A máquina de `talk_hits`/`cur_run`/`best_run`/`motion` foi preservada, só o valor que ela consome mudou (delta de MAR em vez de diff de pixel) — `TALK_DIFF_THRESHOLD=15.0` (calibrado pra diff de pixel 0-255) virou `MAR_DELTA_THRESHOLD=0.06` (calibrado pra uma razão geométrica, ordem de grandeza completamente diferente).

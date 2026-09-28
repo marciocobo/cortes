@@ -684,6 +684,16 @@ export default function VideoLibrary() {
                     Palavra Completa
                   </span>
                 )}
+                {/* add-louvor-clipping-mode: same pattern for a Louvor full
+                    song vs. a Louvor highlight Short. */}
+                {clip.isFullSong && (
+                  <span
+                    className="clip-status-pill"
+                    style={{ marginBottom: 4, display: "inline-block", background: "#7ed3a8", color: "#0a0a13" }}
+                  >
+                    Música completa
+                  </span>
+                )}
                 <p className="name">{clip.hook || clip.name}</p>
                 <p className="meta">
                   {[formatSize(clip.sizeBytes), formatDate(clip.createdAt)].filter(Boolean).join(" · ")}

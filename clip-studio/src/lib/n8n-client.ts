@@ -37,6 +37,11 @@ export type ClipSummary = {
   // pipeline's output folder (Videos-Cortes/Podcast/Cortes) - same
   // sourceFolder-tag mechanism as isFullWord.
   isPodcast: boolean;
+  // add-louvor-clipping-mode: true for a Louvor full-song clip (as opposed
+  // to a Louvor highlight Short). Read from the `_meta.json` `kind` field,
+  // falling back to the `louvor_musica_` file-name prefix the pipeline uses
+  // when the meta is missing.
+  isFullSong: boolean;
   // add-video-type-category-filters: content type for the library's "Tipo"
   // filter/badge, derived from the same sourceFolder tag. isFullWord stays
   // separate - Palavra Completa is a format variant of PREGACAO, not a
@@ -48,8 +53,7 @@ export type ContentType = "PREGACAO" | "LOUVOR" | "PODCAST";
 
 function contentTypeFromSourceFolder(sourceFolder: string | undefined): ContentType {
   if (sourceFolder === "Podcast/Cortes") return "PODCAST";
-  // Reserved by add-video-type-category-filters: no pipeline writes to
-  // Videos-Cortes/Louvor/Cortes yet, so this branch is unreachable today.
+  // Populated by the Louvor pipeline (add-louvor-clipping-mode).
   if (sourceFolder === "Louvor/Cortes") return "LOUVOR";
   // "Cortes" (Shorts) and "PalavraCompleta/Cortes".
   return "PREGACAO";
@@ -206,6 +210,8 @@ type ClipMetaJson = {
   hook?: string;
   reason?: string;
   videoSource?: string;
+  // Louvor pipeline only: "musica" (full song) or "trecho" (highlight).
+  kind?: string;
 };
 
 /**
@@ -324,6 +330,9 @@ export async function listClips(type?: ContentType): Promise<ClipSummary[]> {
         edited,
         isFullWord: mp4.sourceFolder === "PalavraCompleta/Cortes",
         isPodcast: mp4.sourceFolder === "Podcast/Cortes",
+        isFullSong:
+          mp4.sourceFolder === "Louvor/Cortes" &&
+          (meta?.kind ? meta.kind === "musica" : mp4.name.startsWith("louvor_musica_")),
         contentType: contentTypeFromSourceFolder(mp4.sourceFolder),
         videoSource: meta?.videoSource ?? null,
       };
