@@ -33,9 +33,9 @@
 ## 7. Validação
 
 - [x] 7.1 `next build` e `eslint` rodam limpos.
-- [ ] 7.2 Verificar manualmente numa instância rodando: a biblioteca mostra o aviso "selecione um tipo" ao carregar, cada um de Pregação/Podcast mostra seus clipes reais (Louvor mostra o estado vazio), as pills de Categoria ficam desabilitadas até um tipo ser escolhido e depois filtram corretamente dentro daquele tipo, e clipes de Palavra Completa já existentes mostram os dois badges.
+- [x] 7.2 Verificar manualmente numa instância rodando: a biblioteca mostra o aviso "selecione um tipo" ao carregar, cada um de Pregação/Podcast mostra seus clipes reais (Louvor mostra o estado vazio), as pills de Categoria ficam desabilitadas até um tipo ser escolhido e depois filtram corretamente dentro daquele tipo, e clipes de Palavra Completa já existentes mostram os dois badges.
 - [x] 7.3 Confirmar que não há regressão no formulário "Enviar Vídeo" (continua só com Pregação/Podcast) nem nas linhas já existentes de `SubmissionHistory.tsx` (continuam rotulando `SHORTS`/`PALAVRA_COMPLETA` como "Pregação", `PODCAST` como "Podcast").
-- [ ] 7.4 Confirmar que o sidebar mostra "Clipador"/"Uploader"/"Admin" no cartão de usuário para cada um dos três papéis.
+- [x] 7.4 Confirmar que o sidebar mostra "Clipador"/"Uploader"/"Admin" no cartão de usuário para cada um dos três papéis.
 
 ## 7b. Carga sob demanda por Tipo (pedido pós-deploy)
 
@@ -47,4 +47,4 @@
 
 ## 8. Achados de RBAC fora de escopo (não implementar sem decisão explícita)
 
-- [ ] 8.1 Levar ao usuário a divergência entre `auth-rbac/spec.md` e o código em dois pontos (ver proposal.md, "Achados adicionais"): (a) biblioteca de vídeos sem escopo por dono para Clipador, (b) Clipador sem acesso à aba "Enviar Vídeo". Não alterar `rbac.ts`, `Sidebar.tsx` (roles do link `/enviar`) nem `/api/clips` nesta change até essa decisão ser tomada.
+- [x] 8.1 (Decidido pelo usuário: manter o código como está e alinhar a spec — delta em `specs/clip-studio/auth-rbac/spec.md`) Levar ao usuário a divergência entre `auth-rbac/spec.md` e o código em dois pontos (ver proposal.md, "Achados adicionais"): (a) biblioteca de vídeos sem escopo por dono para Clipador, (b) Clipador sem acesso à aba "Enviar Vídeo". Não alterar `rbac.ts`, `Sidebar.tsx` (roles do link `/enviar`) nem `/api/clips` nesta change até essa decisão ser tomada.
