@@ -7,6 +7,9 @@
 // code ever saw the full body - confirmed with a throttled upload test that
 // failed at exactly ~300s. next.config.ts has no setting for this; a custom
 // server is the only way to change it.
+// CommonJS on purpose: this file is run directly by `node server.js`, not
+// compiled by Next/TypeScript, so require() is the correct import form here.
+/* eslint-disable @typescript-eslint/no-require-imports */
 const { createServer } = require("http");
 const next = require("next");
 

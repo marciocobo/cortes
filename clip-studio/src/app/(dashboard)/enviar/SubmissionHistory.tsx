@@ -108,37 +108,13 @@ function ReprocessIcon() {
   );
 }
 
-// Same overlay pattern as VideoLibrary.tsx's ModalOverlay (dark backdrop,
-// #4f4f80 border, 10px radius) - kept local here since neither file shares
+// Same overlay pattern as VideoLibrary.tsx's ModalOverlay (.modal-overlay
+// + .modal from globals.css) - kept local here since neither file shares
 // a components module today and this is the only modal on this page.
 function ModalOverlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.7)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-        padding: 16,
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--panel)",
-          border: "1px solid #4f4f80",
-          borderRadius: 10,
-          padding: 24,
-          maxWidth: 480,
-          width: "100%",
-          boxSizing: "border-box",
-        }}
-      >
+    <div onClick={onClose} className="modal-overlay">
+      <div onClick={(e) => e.stopPropagation()} className="modal" style={{ maxWidth: 480 }}>
         {children}
       </div>
     </div>
@@ -171,53 +147,40 @@ function AttemptHistoryModal({ submission, onClose }: { submission: Submission; 
 
   return (
     <ModalOverlay onClose={onClose}>
-      <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>Histórico de tentativas</div>
-      <p style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 16 }}>{submission.title}</p>
+      <div className="modal-title">Histórico de tentativas</div>
+      <p className="modal-subtitle">{submission.title}</p>
 
       {error && <p className="error-text">{error}</p>}
-      {!error && attempts === null && <p style={{ color: "var(--text-dim)" }}>Carregando...</p>}
+      {!error && attempts === null && <p className="loading-text">Carregando...</p>}
       {!error && attempts !== null && attempts.length === 0 && submission.status !== "ERRO" && (
-        <p style={{ color: "var(--text-dim)" }}>Nenhuma tentativa anterior.</p>
+        <p className="loading-text">Nenhuma tentativa anterior.</p>
       )}
       {!error && attempts !== null && (attempts.length > 0 || submission.status === "ERRO") && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: 320, overflowY: "auto" }}>
+        <div className="attempt-list">
           {/* Current failure isn't in the attempts table yet - that only
               gets a row once this submission is reprocessed (see
               youtube-ingestion spec, "Submission attempt history"). Show it
               here so the error reason removed from the main table row (per
               user feedback) is still visible somewhere. */}
           {submission.status === "ERRO" && (
-            <div style={{ borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
-              <div style={{ fontSize: 12, color: "var(--status-erro)", marginBottom: 4 }}>
+            <div className="attempt-item">
+              <div className="attempt-meta attempt-meta-current">
                 {new Date(submission.updatedAt).toLocaleString("pt-BR")} — atual
               </div>
-              <div style={{ fontSize: 13 }}>{submission.errorReason ?? "Sem motivo registrado"}</div>
+              <div className="attempt-reason">{submission.errorReason ?? "Sem motivo registrado"}</div>
             </div>
           )}
           {attempts.map((a) => (
-            <div key={a.id} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 12 }}>
-              <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
-                {new Date(a.occurredAt).toLocaleString("pt-BR")}
-              </div>
-              <div style={{ fontSize: 13 }}>{a.errorReason ?? "Sem motivo registrado"}</div>
+            <div key={a.id} className="attempt-item">
+              <div className="attempt-meta">{new Date(a.occurredAt).toLocaleString("pt-BR")}</div>
+              <div className="attempt-reason">{a.errorReason ?? "Sem motivo registrado"}</div>
             </div>
           ))}
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
-        <button
-          onClick={onClose}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#a3a3b3",
-            borderRadius: 100,
-            padding: "10px 20px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
+      <div className="modal-footer modal-footer-spaced">
+        <button onClick={onClose} className="btn-ghost">
           Fechar
         </button>
       </div>
@@ -268,17 +231,17 @@ export default function SubmissionHistory() {
     }
   }
 
-  if (submissions === null) return <p style={{ color: "var(--text-dim)" }}>Carregando...</p>;
+  if (submissions === null) return <p className="loading-text">Carregando...</p>;
   if (submissions.length === 0) return <p className="empty-state">Nenhum envio ainda.</p>;
 
   return (
     <div>
       {reprocessError && (
-        <p className="error-text" style={{ marginBottom: 12 }}>
+        <p className="error-text">
           {reprocessError}
         </p>
       )}
-      <div className="card" style={{ overflow: "hidden" }}>
+      <div className="card table-card">
         <table>
           <thead>
             <tr>
@@ -300,19 +263,18 @@ export default function SubmissionHistory() {
                       {s.youtubeUrl}
                     </a>
                   ) : (
-                    <span style={{ color: "var(--text-dim)" }}>Arquivo enviado</span>
+                    <span className="muted">Arquivo enviado</span>
                   )}
                 </td>
                 <td data-label="Enviado por">{s.submittedBy.name}</td>
                 <td data-label="Data / Status">
-                  <div>{new Date(s.createdAt).toLocaleString("pt-BR")}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                  <div className="cell-date">{new Date(s.createdAt).toLocaleString("pt-BR")}</div>
+                  <div className="cell-meta">
                     {s.status === "ERRO" ? (
                       <button
                         type="button"
                         className={STATUS_PILL_CLASS[s.status]}
                         onClick={() => setHistoryFor(s)}
-                        style={{ border: "none", cursor: "pointer" }}
                         title="Ver histórico de tentativas"
                       >
                         {STATUS_LABEL[s.status]}
@@ -321,7 +283,7 @@ export default function SubmissionHistory() {
                       <span className={STATUS_PILL_CLASS[s.status]}>{STATUS_LABEL[s.status]}</span>
                     )}
                     {(uploadProgressPercent(s) !== null || elapsedLabel(s) !== null) && (
-                      <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                      <span className="progress-meta">
                         {[
                           uploadProgressPercent(s) !== null ? `${uploadProgressPercent(s)}%` : null,
                           elapsedLabel(s),

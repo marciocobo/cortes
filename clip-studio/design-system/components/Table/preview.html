@@ -1,17 +1,18 @@
-<!-- @dsCard group="Data" height=200 width=720 subtitle="Renderização estática" -->
+<!-- @dsCard group="Data" height=260 width=760 subtitle="Renderização estática" -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>Table</title>
-<style>body{padding:16px}td:nth-child(3){font-variant-numeric:tabular-nums}</style>
+<style>body{padding:16px}</style>
 </head>
 <body>
+<div class="card table-card">
 <table>
-  <thead><tr><th>Título</th><th>Modo</th><th>Enviado em</th><th>Status</th></tr></thead>
+  <thead><tr><th>Vídeo</th><th>Tipo</th><th>Enviado por</th><th>Data / Status</th></tr></thead>
   <tbody>
-    <tr><td data-label="Título">Culto 27/09 - Pr. Daniel dos Santos</td><td data-label="Modo">Louvor</td><td data-label="Enviado em">28/09/2026 08:14</td><td data-label="Status"><span class="pill pill-concluido">Concluído</span></td></tr>
-    <tr><td data-label="Título">Podcast #58 - Convidado especial</td><td data-label="Modo">Podcast</td><td data-label="Enviado em">03/10/2026 19:40</td><td data-label="Status"><span class="pill pill-processando">Processando</span></td></tr>
-    <tr><td data-label="Título">Culto 01/10 - Miss. Geovania Soares</td><td data-label="Modo">Shorts</td><td data-label="Enviado em">04/10/2026 07:02</td><td data-label="Status"><span class="pill pill-fila">Fila</span></td></tr>
+    <tr><td data-label="Vídeo">Culto 27/09 - Pr. Daniel dos Santos</td><td data-label="Tipo">Louvor</td><td data-label="Enviado por">Ana Lima</td><td data-label="Data / Status"><div class="cell-date">28/09/2026 08:14:02</div><div class="cell-meta"><span class="pill pill-concluido">Concluído</span></div></td></tr>
+    <tr><td data-label="Vídeo">Podcast #58 - Convidado especial</td><td data-label="Tipo">Podcast</td><td data-label="Enviado por">Marcio</td><td data-label="Data / Status"><div class="cell-date">03/10/2026 19:40:11</div><div class="cell-meta"><span class="pill pill-baixando">Baixando</span><span class="progress-meta">42% · 12m</span></div></td></tr>
   </tbody>
 </table>
+</div>
 </body>
 </html>

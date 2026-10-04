@@ -7,16 +7,12 @@ export default async function EnviarPage() {
   return (
     <div>
       <p className="eyebrow">Automação</p>
-      <h1 style={{ marginTop: 0 }}>Enviar Vídeo</h1>
-      <p style={{ color: "var(--text-dim)", maxWidth: 560 }}>
-        Cole o link do vídeo completo do YouTube.
-      </p>
-      <div className="card" style={{ padding: 24, maxWidth: 560, marginBottom: 32 }}>
+      <h1>Enviar Vídeo</h1>
+      <p className="page-intro">Cole o link do vídeo completo do YouTube.</p>
+      <div className="card form-card">
         <SubmitForm />
       </div>
-      <div style={{ fontSize: 14, color: "var(--text-dim)", marginBottom: 12 }}>
-        Histórico de envios
-      </div>
+      <h2 className="section-label">Histórico de envios</h2>
       <SubmissionHistory />
     </div>
   );

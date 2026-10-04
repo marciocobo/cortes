@@ -41,7 +41,7 @@ export default function YoutubeCookieForm() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label htmlFor="cookiesTxt">Conteúdo do cookies.txt</label>
         <textarea
           id="cookiesTxt"
@@ -50,33 +50,22 @@ export default function YoutubeCookieForm() {
           value={cookiesTxt}
           onChange={(e) => setCookiesTxt(e.target.value)}
           placeholder="# Netscape HTTP Cookie File..."
-          style={{
-            width: "100%",
-            background: "#0f0f12",
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-            color: "var(--text)",
-            padding: "10px 12px",
-            fontFamily: "monospace",
-            fontSize: 12,
-            boxSizing: "border-box",
-            resize: "vertical",
-          }}
+          className="input-mono"
         />
       </div>
       {error && (
-        <p className="error-text" style={{ marginBottom: 12 }}>
+        <p className="error-text">
           {error}
         </p>
       )}
       {result && result.ok && (
-        <p style={{ color: "var(--status-concluido)", marginBottom: 12 }}>
-          ✅ Cookie válido e testado ({result.cookieCount ?? "?"} cookies).
+        <p className="success-text">
+          Cookie válido e testado ({result.cookieCount ?? "?"} cookies).
         </p>
       )}
       {result && !result.ok && (
-        <p className="error-text" style={{ marginBottom: 12 }}>
-          ❌ {result.step === "bootstrap" ? "Bootstrap falhou" : "Bootstrap ok, mas validação falhou"}:{" "}
+        <p className="error-text">
+          {result.step === "bootstrap" ? "Bootstrap falhou" : "Bootstrap ok, mas validação falhou"}:{" "}
           {result.reason ?? result.detail ?? "motivo desconhecido"}
         </p>
       )}
@@ -84,7 +73,6 @@ export default function YoutubeCookieForm() {
         className="btn-primary"
         type="submit"
         disabled={busy || !cookiesTxt.trim()}
-        style={{ width: "auto", padding: "12px 24px" }}
       >
         {busy ? "Validando..." : "Atualizar cookie"}
       </button>

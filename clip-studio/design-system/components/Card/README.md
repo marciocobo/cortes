@@ -2,6 +2,6 @@
 
 Superfície elevada que agrupa um formulário, uma lista ou um clipe.
 
-`.card`: fundo `panel`, borda de 1px `border`, `radius-xl`. O padding é do conteúdo: 24px em cards de formulário (com `max-width` `form-max`), 16px em listas, nenhum no card de vídeo (o corpo tem o próprio padding). Títulos dentro do card usam `title-section` com `margin-top:0`. Uma mensagem de sucesso pode trocar a borda para `status-concluido`.
+`.card`: fundo `surface`, borda `border` (fio de cabelo), `radius-lg` (12px) e `shadow-sm`. Variantes de layout: `.form-card` (padding 24px, largura máxima `form-max`, 32px abaixo), `.card-pad` (padding 16px), `.table-card` (sem padding, `overflow:hidden` para a tabela respeitar os cantos), e nenhum padding no card de vídeo (o corpo tem o próprio). Títulos dentro do card usam `h2.card-title` (`title-section`).
 
-Não empilhe cards dentro de cards e não acrescente sombra. O consumidor fornece o conteúdo e o padding.
+Confirmações de sucesso não pintam a borda do card: use `.callout-success` (fundo tonal `status-concluido-soft`, `radius-md`). Não empilhe cards dentro de cards e não troque a borda por sombra. O consumidor fornece o conteúdo.

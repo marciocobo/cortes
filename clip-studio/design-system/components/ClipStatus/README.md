@@ -1,7 +1,7 @@
 # ClipStatus
 
-Pílula em contorno com o estado de um clipe na biblioteca: Original, Rascunho, Cortado, Processando.
+Badge tonal com o estado de um clipe na biblioteca: Original, Rascunho, Cortado, Processando.
 
-`.clip-status-pill` (0,7rem, borda `border`, `radius-pill`) mais `.clip-status-original` (`text-dim`), `.clip-status-rascunho` (`status-processando`), `.clip-status-cortado` (`status-concluido`) ou `.clip-status-processando` (`status-baixando`). Fica numa `.clip-status-row` junto da data do último corte (`.clip-status-date`, só para Cortado).
+`.clip-status-pill` (12px/500, `radius-pill`, ponto à esquerda na cor do texto) mais `.clip-status-original` (tons de `status-fila`), `.clip-status-rascunho` (`status-processando`), `.clip-status-cortado` (`status-concluido`) ou `.clip-status-processando` (`status-baixando`). Cada um pinta o fundo com o `-soft` do status e o texto com a cor cheia; o texto passa de 4,5:1 nos dois temas. Fica numa `.clip-status-row` junto da data do último corte (`.clip-status-date`, números tabulares, só para Cortado).
 
-Contorno, e não preenchimento, para não competir com os badges de tipo do mesmo card. Rascunho existe só no navegador (localStorage) e é filtrado como Original. O consumidor fornece o status e a data.
+O ponto diferencia status de tipo (os badges de tipo não têm ponto). Rascunho existe só no navegador (localStorage) e é filtrado como Original. O consumidor fornece o status e a data.

@@ -50,11 +50,11 @@ export default function N8nConfigForm() {
     }
   }
 
-  if (!loaded) return <p style={{ color: "var(--text-dim)" }}>Carregando...</p>;
+  if (!loaded) return <p className="loading-text">Carregando...</p>;
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label>URL base do webhook de ingestão do N8N</label>
         <input
           type="url"
@@ -63,7 +63,7 @@ export default function N8nConfigForm() {
           placeholder="https://n8n.mcobo.com.br/webhook"
         />
       </div>
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label>Segredo compartilhado {secretAlreadySet && "(já configurado - deixe em branco para manter)"}</label>
         <input
           type="password"
@@ -72,7 +72,7 @@ export default function N8nConfigForm() {
           placeholder={secretAlreadySet ? "••••••••" : ""}
         />
       </div>
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label>Limite de tempo travado (horas)</label>
         <input
           type="number"
@@ -82,9 +82,9 @@ export default function N8nConfigForm() {
           onChange={(e) => setStuckThresholdHours(Number(e.target.value))}
         />
       </div>
-      {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
-      {saved && <p style={{ color: "var(--status-concluido)", marginBottom: 12 }}>Salvo.</p>}
-      <button className="btn-primary" type="submit" disabled={busy}>
+      {error && <p className="error-text">{error}</p>}
+      {saved && <p className="success-text">Salvo.</p>}
+      <button className="btn-primary btn-block" type="submit" disabled={busy}>
         Salvar
       </button>
     </form>

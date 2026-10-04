@@ -1,7 +1,7 @@
 # Select
 
-Select nativo compacto, usado para ordenar a biblioteca (Data: mais recente / Data: mais antiga).
+Select nativo compacto, usado para ordenar a biblioteca (Data: mais recente / Data: mais antiga) e para o perfil de usuário no admin.
 
-`.select`: fundo `panel`, borda `border`, `radius-lg`, texto `text-bright` a 13px, padding 8px 12px. Fica alinhado à direita do título da página. Use o `<select>` nativo, não um menu customizado.
+`.select`: fundo `field`, contorno `border-control`, `radius-md`, 32px de altura (36px dentro de `.inline-form`), texto 13px em `text`. Hover clareia o contorno. O `color-scheme` do tema faz o menu nativo seguir o escuro ou o claro. Use o `<select>` nativo, não um menu customizado.
 
-Extraído dos estilos inline de `VideoLibrary.tsx`. O consumidor fornece as opções, o valor e um `aria-label`.
+O consumidor fornece as opções, o valor e um `aria-label` quando não há rótulo visível.

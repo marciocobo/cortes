@@ -1,150 +1,727 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@500;600&display=swap");
 
-/* Clip Studio component styles.
-   Part 1 mirrors clip-studio/src/app/globals.css class for class.
-   Part 2 names patterns the app currently writes as inline style={{...}}
-   (filter pills, dialogs, Switch, light/ghost buttons, type badges, trim
-   track) so other surfaces can reuse them. Values are copied exactly. */
+/* Clip Studio component styles (redesign 2026-10-04).
+   Everything below the token note mirrors clip-studio/src/app/globals.css
+   class for class, byte for byte. The tokens themselves come from
+   tokens.json (compiled to tokens.css by the design-system page), so the
+   :root variable blocks of globals.css are not repeated here. */
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
 
 body {
+  padding: 0;
   margin: 0;
-  background:
-    radial-gradient(circle at 20% -10%, var(--glow-indigo), transparent 60%),
-    radial-gradient(circle at 100% 0%, var(--glow-blue), transparent 50%),
-    var(--bg);
+  min-height: 100vh;
+  /* A single, very faint top glow in the brand hue - the only decoration
+     on the ground. Everything else is flat surface + hairline border. */
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, var(--glow), transparent 70%), var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-input, button, select { font: inherit; }
-
-/* ---------- Part 1: globals.css ---------- */
-
-h1 { font-size: 30px; font-weight: 400; letter-spacing: -0.5px; margin: 0; }
-
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-xl); }
-
-.field label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px; }
-.field input {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--text);
-  padding: 10px 12px;
+a {
+  color: inherit;
 }
 
-.btn-primary {
-  width: 100%;
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: 12px;
+::selection {
+  background: var(--accent-soft);
+}
+
+h1 {
+  font-size: 30px;
+  line-height: 1.2;
   font-weight: 600;
-  cursor: pointer;
-}
-.btn-primary:disabled { opacity: 0.6; cursor: default; }
-
-.btn-secondary {
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 14px;
-  cursor: pointer;
+  letter-spacing: -0.02em;
+  margin: 0;
 }
 
-.pill-toggle {
-  background: transparent;
-  color: var(--accent-blue);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 10px 16px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.pill-toggle-active {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-color: var(--accent);
+h2 {
+  font-size: 20px;
+  line-height: 1.3;
   font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
-.btn-danger {
-  background: transparent;
-  color: var(--danger);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  cursor: pointer;
+input,
+button,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
 }
 
-.error-text { color: var(--danger); font-size: 0.85rem; }
+/* Keyboard focus: a 2px accent ring with a 2px offset in the ground
+   color, only on :focus-visible (never on a plain tap/click). */
+:where(a, button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
+/* Shared 150ms transition for every interactive surface. */
+:where(a, button, input, select, textarea, [role="button"], [role="switch"], [role="slider"]) {
+  transition:
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    opacity var(--duration-fast) ease;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Page header ---------- */
+
+/* Blue all-caps eyebrow label above every page/section heading
+   (BIBLIOTECA / AUTOMAÇÃO / ADMINISTRAÇÃO). */
 .eyebrow {
-  font-family: var(--font-mono), monospace;
-  font-weight: 400;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 1.4;
   letter-spacing: 0.06em;
-  color: var(--accent-blue);
+  color: var(--accent);
   text-transform: uppercase;
   margin: 0 0 4px;
 }
 
-.sidebar {
-  width: 240px;
+.page-header {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  border-right: 1px solid var(--border);
-  padding: 24px 20px;
-  background: var(--panel);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
 }
-.sidebar .logo {
-  font-family: var(--font-mono), monospace;
-  font-weight: 600;
-  font-size: 1.1rem;
-  letter-spacing: 0.03em;
-  color: var(--accent-blue);
-  margin-bottom: 20px;
-}
-.sidebar nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.sidebar a {
-  display: block;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  text-decoration: none;
-  color: var(--text-dim);
-}
-.sidebar a.active, .sidebar a:hover { background: var(--panel); color: var(--text); }
-.sidebar .user-box { border-top: 1px solid var(--border); padding-top: 12px; font-size: 0.85rem; }
 
-.hamburger-btn {
-  display: flex;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  background: var(--panel);
+.page-intro {
+  color: var(--text-muted);
+  font-size: 16px;
+  max-width: var(--form-max);
+  margin: 8px 0 24px;
+}
+
+.section-label {
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+/* ---------- Surfaces ---------- */
+
+.card {
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-card {
+  padding: 24px;
+  max-width: var(--form-max);
+  margin-bottom: 32px;
+}
+
+.card-title {
+  margin: 0 0 16px;
+}
+
+.card-pad {
+  padding: 16px;
+}
+
+.table-card {
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.callout-success {
+  background: var(--status-concluido-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.callout-success code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--status-concluido);
+}
+
+/* ---------- Forms ---------- */
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field label,
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.field input,
+.field textarea,
+.input-field {
+  display: block;
+  width: 100%;
+  min-height: var(--control-height);
+  background: var(--field);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 14px;
+  padding: 7px 12px;
+}
+
+.field textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.input-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.field input::placeholder,
+.field textarea::placeholder,
+.input-field::placeholder {
+  color: var(--text-faint);
+}
+
+.field input:hover,
+.field textarea:hover,
+.input-field:hover {
+  border-color: var(--text-muted);
+}
+
+.select {
+  min-height: var(--control-sm);
+  background: var(--field);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 13px;
+  padding: 5px 10px;
   cursor: pointer;
 }
 
-.video-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-@media (max-width: 900px) { .video-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 540px) { .video-grid { grid-template-columns: 1fr; } }
+.select:hover {
+  border-color: var(--text-muted);
+}
 
-.video-card { overflow: hidden; }
+.inline-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.inline-form .input-field {
+  flex: 1 1 180px;
+  width: auto;
+}
+
+.inline-form .select {
+  min-height: var(--control-height);
+}
+
+/* SubmitForm file picker: styled box over a visually hidden
+   <input type=file> - the native file input's own button/text can't be
+   restyled consistently across browsers. */
+.file-picker {
+  width: 100%;
+  background: var(--field);
+  border: 1px dashed var(--border-control);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.file-picker:hover {
+  background: var(--surface-hover);
+  border-color: var(--text-muted);
+}
+
+.file-picker.has-file {
+  color: var(--text);
+  border-style: solid;
+}
+
+/* iOS Safari zooms the page into any focused input whose font-size is
+   below 16px - keep the dense 14px look on desktop, 16px on phones. */
+@media (max-width: 720px) {
+  .field input,
+  .field textarea,
+  .input-field,
+  .select {
+    font-size: 16px;
+  }
+}
+
+/* ---------- Buttons ---------- */
+
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-ghost,
+.btn-light {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--control-height);
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Primary action: near-white fill in dark, near-black in light (see the
+   design-system README for why it is not the brand blue). */
+.btn-primary,
+.btn-light {
+  background: var(--primary);
+  color: var(--on-primary);
+  border: 1px solid var(--primary);
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-light:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-control);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.btn-sm {
+  min-height: var(--control-sm);
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+/* Only the button that confirms a deletion, inside its dialog. */
+.btn-danger {
+  background: var(--danger-solid);
+  color: var(--on-danger);
+  border: 1px solid var(--danger-solid);
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-link {
+  display: inline-block;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  color: var(--text);
+}
+
+:where(.btn-primary, .btn-secondary, .btn-danger, .btn-ghost, .btn-light):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Segmented toggle (source-type tabs, content-type selector on the
+   Enviar Vídeo form). Historic class names kept: .pill-toggle is no
+   longer a pill - it's one segment inside a .toggle-group track. */
+.toggle-group {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--track);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.pill-toggle {
+  flex: 1;
+  min-height: var(--control-sm);
+  padding: 0 12px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.pill-toggle:hover {
+  color: var(--text);
+}
+
+.pill-toggle-active {
+  background: var(--segment-active);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.success-text {
+  color: var(--status-concluido);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+/* ---------- App shell ---------- */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 72px 24px 48px;
+  max-width: var(--content-max);
+  transition: margin-left var(--duration-drawer) ease;
+}
+
+.main-shifted {
+  margin-left: var(--sidebar-width);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Below this width, pushing 240px of content over leaves too little room
+   (forces horizontal scroll, crushes cards) - switch to a classic overlay
+   drawer instead: sidebar sits on top of a dimmed backdrop, content never
+   moves. Above it, content keeps shifting to match the prototype. */
+@media (max-width: 720px) {
+  .main {
+    padding: 72px 16px 40px;
+  }
+  .main-shifted {
+    margin-left: 0;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: var(--backdrop);
+    z-index: 40;
+  }
+}
+
+.hamburger-btn {
+  display: flex;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 60;
+  width: var(--hamburger);
+  height: var(--hamburger);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hamburger-btn:hover {
+  background: var(--surface-hover);
+}
+
+.hamburger-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 50;
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform: translateX(-100%);
+  transition: transform var(--duration-drawer) ease;
+  border-right: 1px solid var(--border);
+  padding: 24px 12px 16px;
+  background: var(--surface);
+}
+
+.sidebar.sidebar-open {
+  transform: translateX(0);
+}
+
+.sidebar .logo {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 4px 0 28px 52px;
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--control-height);
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sidebar nav a svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.sidebar nav a:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* The active page gets its own fill (one step above hover) plus the brand
+   hue on its icon - visible against the drawer, unlike the old version
+   that reused the drawer's own color. */
+.sidebar nav a.active {
+  background: var(--surface-active);
+  color: var(--text);
+}
+
+.sidebar nav a.active svg {
+  color: var(--accent);
+}
+
+.sidebar .user-box {
+  border-top: 1px solid var(--border);
+  padding: 12px 12px 0;
+  font-size: 13px;
+}
+
+.user-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.user-role {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  margin: 2px 0 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ---------- Video library ---------- */
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filters {
+  margin-bottom: 24px;
+}
+
+.filters .filter-row:last-child {
+  margin-bottom: 0;
+}
+
+.filter-row-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  min-width: 72px;
+}
+
+/* Chips are the one compact control that stays pill-shaped. */
+.filter-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--chip-height);
+  border-radius: var(--radius-pill);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-control);
+}
+
+.filter-pill:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.filter-pill-active,
+.filter-pill-active:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-pill:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* Fixed column count keyed to viewport width (not container width) so
+   opening/closing the push-menu - which shrinks .main's available width -
+   never flips the column count and resizes the cards mid-transition. */
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .video-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 540px) {
+  .video-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.video-card {
+  overflow: hidden;
+  transition: border-color var(--duration-fast) ease;
+}
+
+.video-card:hover {
+  border-color: var(--surface-active);
+}
+
 .video-card .thumb-wrap {
   position: relative;
   aspect-ratio: 16 / 9;
   background: linear-gradient(135deg, var(--thumb-from), var(--thumb-to));
+  border-bottom: 1px solid var(--border);
 }
-.video-card .thumb { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+/* Clips are 9:16 shorts, not 16:9 - object-fit:contain (not cover) keeps
+   the real vertical framing inside the card's 16:9 thumb-wrap instead of
+   cropping most of the frame away. The card's own footprint is untouched. */
+.video-card .thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Plain CSS triangle (no background circle) for clips without a thumbnail. */
 .video-card .play-icon {
   position: absolute;
   top: 50%;
@@ -157,20 +734,36 @@ h1 { font-size: 30px; font-weight: 400; letter-spacing: -0.5px; margin: 0; }
   border-left: 20px solid var(--play-glyph);
   pointer-events: none;
 }
+
 .video-card .duration-badge {
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  right: 8px;
+  bottom: 8px;
   background: var(--duration-bg);
-  color: #fff;
-  font-size: 0.75rem;
+  color: var(--on-media);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   padding: 2px 6px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
 }
-.video-card .body { padding: 14px 16px; }
+
+.video-card .body {
+  padding: 16px;
+}
+
+.video-card .badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
 .video-card .name {
   font-weight: 500;
-  font-size: 0.9rem;
+  font-size: 14px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
   margin: 0 0 4px;
   word-break: break-word;
   display: -webkit-box;
@@ -178,219 +771,607 @@ h1 { font-size: 30px; font-weight: 400; letter-spacing: -0.5px; margin: 0; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.video-card .meta { color: var(--text-dim); font-size: 0.8rem; margin: 0; }
-.video-card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
+.video-card .meta {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.video-card .actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+/* Loading placeholder for the /videos grid - the n8n webhook + per-clip
+   Graph API meta fetch (see n8n-client.ts listClips) can take several
+   seconds, and a bare "Carregando..." text read as a stuck page. */
 @keyframes skeleton-shimmer {
   0% { background-position: -200px 0; }
   100% { background-position: calc(200px + 100%) 0; }
 }
+
 .skeleton-block {
   background: linear-gradient(90deg, var(--skeleton-base) 25%, var(--skeleton-highlight) 37%, var(--skeleton-base) 63%);
   background-size: 400px 100%;
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
-@media (prefers-reduced-motion: reduce) { .skeleton-block { animation: none; } }
 
-.clip-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.clip-status-pill {
-  display: inline-block;
-  font-size: 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 2px 10px;
+.video-card .thumb-wrap.skeleton-block {
+  border-radius: inherit;
 }
-.clip-status-date { font-size: 0.75rem; color: var(--text-dim); }
-.clip-status-original { color: var(--text-dim); }
-.clip-status-rascunho { color: var(--status-processando); border-color: var(--status-processando); }
-.clip-status-cortado { color: var(--status-concluido); border-color: var(--status-concluido); }
-.clip-status-processando { color: var(--status-baixando); border-color: var(--status-baixando); }
 
+.skeleton-line {
+  height: 14px;
+  width: 80%;
+  margin-bottom: 8px;
+  border-radius: var(--radius-xs);
+}
+
+.skeleton-line-sm {
+  height: 12px;
+  width: 50%;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------- Badges (status and type) ----------
+   Soft tonal badges: translucent tint + text in the same hue, always with
+   the word written out. Status badges add a leading dot; type badges don't. */
+.pill,
+.clip-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.33;
+  white-space: nowrap;
+}
+
+.pill::before,
+.clip-status-pill:not(.type-badge)::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* Submission status (Histórico de envios) */
+.pill-fila { background: var(--status-fila-soft); color: var(--status-fila); }
+.pill-baixando { background: var(--status-baixando-soft); color: var(--status-baixando); }
+.pill-processando { background: var(--status-processando-soft); color: var(--status-processando); }
+.pill-concluido { background: var(--status-concluido-soft); color: var(--status-concluido); }
+.pill-erro { background: var(--status-erro-soft); color: var(--status-erro); }
+
+button.pill {
+  cursor: pointer;
+}
+
+button.pill:hover {
+  border-color: currentColor;
+}
+
+/* Clip status (Original / Rascunho / Cortado / Processando) */
+.clip-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.clip-status-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.clip-status-original { background: var(--status-fila-soft); color: var(--status-fila); }
+.clip-status-rascunho { background: var(--status-processando-soft); color: var(--status-processando); }
+.clip-status-cortado { background: var(--status-concluido-soft); color: var(--status-concluido); }
+.clip-status-processando { background: var(--status-baixando-soft); color: var(--status-baixando); }
+
+/* Content-type and format badges on a video card */
+.type-pregacao { background: var(--type-pregacao-soft); color: var(--type-pregacao); }
+.type-louvor { background: var(--type-louvor-soft); color: var(--type-louvor); }
+.type-podcast { background: var(--type-podcast-soft); color: var(--type-podcast); }
+.type-palavra-completa { background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- Icon buttons ---------- */
+
+/* Video-card actions are icon-only buttons (download/scissors/trash) -
+   and "Excluir" carries no destructive red here either; only the real
+   confirmation inside DeleteConfirmModal does. */
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   flex-shrink: 0;
   padding: 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: transparent;
-  color: var(--text-dim);
+  color: var(--text-muted);
   cursor: pointer;
+  text-decoration: none;
+  /* Mobile browsers paint a rectangular tap-highlight over rounded
+     buttons like this one on every tap. Suppress it and, for keyboard
+     users only (:focus-visible, not plain tap/:focus), draw the rounded
+     focus ring instead of the browser's default outline. */
   -webkit-tap-highlight-color: transparent;
   outline: none;
 }
-.icon-btn:focus-visible { box-shadow: var(--focus-ring); }
-.video-card .icon-btn { color: var(--text-bright); }
-.video-card .icon-btn.icon-btn-dim { color: var(--text-dim); }
-.icon-btn svg { width: 16px; height: 16px; }
-.icon-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent-blue); }
-.icon-btn:disabled { opacity: 0.4; cursor: default; }
 
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-th { color: var(--text-dim); font-weight: 500; }
-
-.pill {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: var(--radius-pill);
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--accent-fg);
-}
-.pill-fila { background: var(--status-fila); color: white; }
-.pill-baixando { background: var(--status-baixando); color: white; }
-.pill-processando { background: var(--status-processando); }
-.pill-concluido { background: var(--status-concluido); }
-.pill-erro { background: var(--status-erro); color: white; }
-
-.empty-state { color: var(--text-dim); padding: 40px 0; text-align: center; }
-
-/* ---------- Part 2: patterns extracted from inline styles ---------- */
-
-/* VideoLibrary header: Tipo / Categoria filter rows */
-.filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.filter-row-label { font-size: 12px; color: var(--text-dim); min-width: 68px; }
-.filter-pill {
-  border-radius: 100px;
-  padding: 6px 14px;
-  font-size: 12px;
-  cursor: pointer;
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-}
-.filter-pill-active { background: var(--text-bright); color: var(--ink); border: none; }
-.filter-pill:disabled { cursor: not-allowed; opacity: 0.4; }
-
-/* VideoLibrary header: sort select */
-.select {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--text-bright);
-  font-size: 13px;
-  padding: 8px 12px;
+.icon-btn:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
-/* Admin forms + Rename dialog input */
-.input-field {
-  width: 100%;
-  background: var(--field);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+/* Same rectangular-tap-highlight issue as .icon-btn above, for the
+   CutModal's round drag handles. */
+[role="slider"] {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+[role="slider"]:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* Download/Cut stay at full text color, scoped to .video-card so the
+   CutModal's own icon-btns (play/stop/cancel) aren't affected. */
+.video-card .icon-btn {
   color: var(--text);
-  padding: 10px 12px;
 }
 
-/* SubmitForm file picker: styled box over a visually hidden <input type=file> */
-.file-picker {
+.video-card .icon-btn.icon-btn-dim {
+  color: var(--text-muted);
+}
+
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border-control);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Text glyph (−/+) inside an icon button: the trim steppers. */
+.icon-btn-text {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Filled variant: the confirm action of the cut dialog (Salvar corte). */
+.icon-btn-solid,
+.icon-btn-solid:hover:not(:disabled) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+/* ---------- Table ---------- */
+
+table {
   width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--text-dim);
-  padding: 10px 12px;
-  cursor: pointer;
+  border-collapse: collapse;
 }
-.file-picker.has-file { color: var(--text); }
 
-/* Dialog footer buttons */
-.btn-ghost {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  border-radius: 100px;
-  padding: 10px 20px;
-  font-size: 13px;
-  cursor: pointer;
+th,
+td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  vertical-align: top;
 }
-.btn-light {
-  background: var(--text-bright);
-  color: var(--ink);
-  border: none;
-  border-radius: 100px;
-  padding: 10px 20px;
+
+th {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  background: var(--surface-hover);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: var(--surface-hover);
+}
+
+td a {
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+td a:hover {
+  text-decoration: underline;
+}
+
+.cell-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.cell-date {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  table,
+  thead,
+  tbody,
+  th,
+  td,
+  tr {
+    display: block;
+  }
+  thead {
+    display: none;
+  }
+  tr {
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+  }
+  tbody tr:last-child {
+    border-bottom: none;
+  }
+  tbody tr:hover td {
+    background: transparent;
+  }
+  td {
+    border: none;
+    padding: 4px 0;
+  }
+  td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    display: inline-block;
+    width: 110px;
+    font-size: 12px;
+  }
+}
+
+.empty-state {
+  color: var(--text-muted);
+  padding: 48px 16px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  margin: 0;
+}
+
+.loading-text {
+  color: var(--text-muted);
+}
+
+/* ---------- Switch ---------- */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.setting-title {
   font-size: 13px;
   font-weight: 500;
-  cursor: pointer;
 }
 
-/* Content-type and format badges on a video card (outline pill base, solid fill) */
-.type-badge { color: var(--ink); border-color: transparent; }
-.type-pregacao { background: var(--type-pregacao); }
-.type-louvor { background: var(--type-louvor); }
-.type-podcast { background: var(--type-podcast); }
-.type-palavra-completa { background: var(--accent-blue); }
+.setting-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
 
-/* SubmitForm "Modo Palavra Completa" switch */
 .switch {
   position: relative;
-  width: 40px;
-  height: 22px;
+  width: 36px;
+  height: 20px;
   flex-shrink: 0;
   border-radius: var(--radius-pill);
   border: none;
-  background: var(--border);
+  background: var(--border-control);
   cursor: pointer;
   padding: 0;
 }
-.switch[aria-checked="true"] { background: var(--accent-blue); }
+
+.switch[aria-checked="true"] {
+  background: var(--accent);
+}
+
 .switch .knob {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--text-bright);
-  transition: left 0.15s;
+  background: var(--knob);
+  box-shadow: var(--shadow-sm);
+  transition: left var(--duration-fast) ease;
 }
-.switch[aria-checked="true"] .knob { left: 20px; }
-.switch:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-/* ModalOverlay + dialog chrome (VideoLibrary, SubmissionHistory) */
+.switch[aria-checked="true"] .knob {
+  left: 18px;
+}
+
+/* ---------- Dialogs ---------- */
+
 .modal-overlay {
   position: fixed;
   inset: 0;
   background: var(--overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
   padding: 16px;
 }
+
 .modal {
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-dialog);
   padding: 24px;
   width: 100%;
 }
-.modal-title { font-size: 18px; font-weight: 500; margin-bottom: 8px; }
-.modal-text { font-size: 14px; color: var(--text-dim); margin: 0 0 20px; }
-.modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* CutModal trim track */
-.trim-times { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
-.trim-track { position: relative; height: 8px; background: var(--border); border-radius: var(--radius-sm); }
-.trim-range { position: absolute; top: 0; height: 100%; background: var(--accent-blue); border-radius: var(--radius-sm); }
-.trim-playhead { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--text-bright); }
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+
+.modal-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+  word-break: break-word;
+}
+
+.modal-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 24px;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.modal-footer-spaced {
+  margin-top: 24px;
+}
+
+.modal .input-field {
+  margin: 12px 0 24px;
+}
+
+/* CutModal: tighter padding, and the height cap that keeps the footer
+   reachable on phones. svh (not vh, and not dvh either) - on mobile, vh
+   is fixed to the viewport size with the browser's own nav/address bar
+   hidden, so when that bar is showing (e.g. right after opening the
+   modal) the modal renders taller than what's actually visible and the
+   bottom action row (Play/Cancelar/Salvar) gets clipped. dvh fixes that
+   but recalculates continuously as the bar animates in/out during
+   scroll, which made the modal's own content visibly shift/jitter while
+   scrolling inside it. svh is the STABLE viewport size as if the bar
+   were always showing (the smallest case) - never clips, never
+   recalculates mid-scroll. */
+.modal-cut {
+  padding: 20px;
+  max-height: calc(100svh - 32px);
+  overflow-y: auto;
+}
+
+/* Sticky action row at the bottom of the scrolling cut dialog - its
+   background must match the dialog's. */
+.modal-cut-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  background: var(--surface-raised);
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.media-frame {
+  display: block;
+  margin: 0 auto 16px;
+  max-width: 100%;
+  border-radius: var(--radius-md);
+  background: var(--media-well);
+  object-fit: contain;
+}
+
+.media-placeholder {
+  margin: 0 auto 16px;
+  width: 100%;
+  background: var(--media-well);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+/* Attempt history list (SubmissionHistory) */
+.attempt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.attempt-item {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.attempt-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
+}
+
+.attempt-meta-current {
+  color: var(--status-erro);
+}
+
+.attempt-reason {
+  font-size: 13px;
+}
+
+/* ---------- Trim track (CutModal) ---------- */
+
+.trim-times {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 8px;
+}
+
+.trim-track {
+  position: relative;
+  height: 8px;
+  background: var(--surface-active);
+  border-radius: var(--radius-xs);
+  margin-bottom: 16px;
+}
+
+.trim-range {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-xs);
+}
+
+.trim-playhead {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--text);
+}
+
 .trim-handle {
   position: absolute;
   top: 50%;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--accent-blue);
-  border: 2px solid var(--text-bright);
+  background: var(--accent);
+  border: 2px solid var(--knob);
+  box-shadow: var(--shadow-sm);
   transform: translate(-50%, -50%);
   cursor: grab;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
   outline: none;
 }
-.trim-handle:focus-visible { box-shadow: var(--focus-ring); }
+
+.trim-handle:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.trim-steppers {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 20px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---------- Login ---------- */
+
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 40px 32px;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-dialog);
+}
+
+.login-title {
+  font-size: 24px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin: 0 0 24px;
+}

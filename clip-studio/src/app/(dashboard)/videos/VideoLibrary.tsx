@@ -199,12 +199,12 @@ const STATUS_FILTERS = ["Original", "Cortado", "Processando"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 // video-library spec: "Filter clips by content type" - a Tipo must be picked
-// before any clip is shown; Categoria (status) is gated behind it. The badge
-// colors match the mockup.
-const TYPE_FILTERS: { value: ContentType; label: string; color: string }[] = [
-  { value: "PREGACAO", label: "Pregação", color: "#8fa8f7" },
-  { value: "LOUVOR", label: "Louvor", color: "#7ed3a8" },
-  { value: "PODCAST", label: "Podcast", color: "#e9a468" },
+// before any clip is shown; Categoria (status) is gated behind it. Each type
+// has its own tonal badge class (type-* tokens in globals.css).
+const TYPE_FILTERS: { value: ContentType; label: string; badgeClass: string }[] = [
+  { value: "PREGACAO", label: "Pregação", badgeClass: "type-pregacao" },
+  { value: "LOUVOR", label: "Louvor", badgeClass: "type-louvor" },
+  { value: "PODCAST", label: "Podcast", badgeClass: "type-podcast" },
 ];
 
 function filterBucket(clip: ClipSummary, isProcessing: boolean): StatusFilter {
@@ -222,8 +222,8 @@ function VideoGridSkeleton() {
         <div key={i} className="card video-card">
           <div className="thumb-wrap skeleton-block" />
           <div className="body">
-            <div className="skeleton-block" style={{ height: 14, width: "80%", marginBottom: 8, borderRadius: 3 }} />
-            <div className="skeleton-block" style={{ height: 12, width: "50%", borderRadius: 3 }} />
+            <div className="skeleton-block skeleton-line" />
+            <div className="skeleton-block skeleton-line-sm" />
           </div>
         </div>
       ))}
@@ -486,39 +486,24 @@ export default function VideoLibrary() {
   // visibly reflow once clips arrive.
   const header = (
     <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 16,
-        }}
-      >
+      <div className="page-header">
         <div>
-          <p className="eyebrow" style={{ margin: 0 }}>
-            Biblioteca
-          </p>
-          <h1 style={{ margin: 0 }}>Vídeos</h1>
+          <p className="eyebrow">Biblioteca</p>
+          <h1>Vídeos</h1>
         </div>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
           aria-label="Ordenar vídeos"
-          style={{
-            background: "#08080c",
-            border: "1px solid #2a2a32",
-            borderRadius: 8,
-            color: "#fcfcfc",
-            fontSize: 13,
-            padding: "8px 12px",
-          }}
+          className="select"
         >
           <option value="recent">Data: mais recente</option>
           <option value="oldest">Data: mais antiga</option>
         </select>
       </div>
-      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-        <span style={{ fontSize: 12, color: "#a3a3b3", minWidth: 68 }}>Tipo</span>
+      <div className="filters">
+      <div className="filter-row">
+        <span className="filter-row-label">Tipo</span>
         {TYPE_FILTERS.map((filter) => {
           const active = typeFilter === filter.value;
           return (
@@ -529,23 +514,16 @@ export default function VideoLibrary() {
                 // (Categoria is meaningless without a Tipo).
                 selectType(active ? null : filter.value);
               }}
-              style={{
-                borderRadius: 100,
-                padding: "6px 14px",
-                fontSize: 12,
-                cursor: "pointer",
-                background: active ? "#fcfcfc" : "transparent",
-                color: active ? "#0a0a13" : "#a3a3b3",
-                border: active ? "none" : "1px solid #2a2a32",
-              }}
+              aria-pressed={active}
+              className={active ? "filter-pill filter-pill-active" : "filter-pill"}
             >
               {filter.label}
             </button>
           );
         })}
       </div>
-      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-        <span style={{ fontSize: 12, color: "#a3a3b3", minWidth: 68 }}>Categoria</span>
+      <div className="filter-row">
+        <span className="filter-row-label">Categoria</span>
         {STATUS_FILTERS.map((filter) => {
           const active = statusFilter === filter;
           const disabled = typeFilter === null;
@@ -555,21 +533,14 @@ export default function VideoLibrary() {
               disabled={disabled}
               title={disabled ? "Selecione um tipo primeiro" : undefined}
               onClick={() => setStatusFilter(active ? null : filter)}
-              style={{
-                borderRadius: 100,
-                padding: "6px 14px",
-                fontSize: 12,
-                cursor: disabled ? "not-allowed" : "pointer",
-                opacity: disabled ? 0.4 : 1,
-                background: active ? "#fcfcfc" : "transparent",
-                color: active ? "#0a0a13" : "#a3a3b3",
-                border: active ? "none" : "1px solid #2a2a32",
-              }}
+              aria-pressed={active}
+              className={active ? "filter-pill filter-pill-active" : "filter-pill"}
             >
               {filter}
             </button>
           );
         })}
+      </div>
       </div>
     </>
   );
@@ -631,7 +602,7 @@ export default function VideoLibrary() {
   return (
     <div>
       {header}
-      {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
+      {error && <p className="error-text">{error}</p>}
       {filteredClips.length === 0 ? (
         <p className="empty-state">
           Nenhum vídeo encontrado
@@ -654,20 +625,12 @@ export default function VideoLibrary() {
                 <span className="duration-badge">{formatDuration(clip.durationSeconds)}</span>
               </div>
               <div className="body">
+                <div className="badges">
                 {(() => {
                   const type = TYPE_FILTERS.find((f) => f.value === clip.contentType);
                   return (
                     type && (
-                      <span
-                        className="clip-status-pill"
-                        style={{
-                          marginBottom: 4,
-                          marginRight: 4,
-                          display: "inline-block",
-                          background: type.color,
-                          color: "#0a0a13",
-                        }}
-                      >
+                      <span className={`clip-status-pill type-badge ${type.badgeClass}`}>
                         {type.label}
                       </span>
                     )
@@ -677,23 +640,18 @@ export default function VideoLibrary() {
                     its own pill next to the type badge (deliberate divergence
                     from the mockup's single-badge card - see design.md). */}
                 {clip.isFullWord && (
-                  <span
-                    className="clip-status-pill"
-                    style={{ marginBottom: 4, display: "inline-block", background: "#6199f6", color: "#0a0a13" }}
-                  >
+                  <span className="clip-status-pill type-badge type-palavra-completa">
                     Palavra Completa
                   </span>
                 )}
                 {/* add-louvor-clipping-mode: same pattern for a Louvor full
                     song vs. a Louvor highlight Short. */}
                 {clip.isFullSong && (
-                  <span
-                    className="clip-status-pill"
-                    style={{ marginBottom: 4, display: "inline-block", background: "#7ed3a8", color: "#0a0a13" }}
-                  >
+                  <span className="clip-status-pill type-badge type-louvor">
                     Música completa
                   </span>
                 )}
+                </div>
                 <p className="name">{clip.hook || clip.name}</p>
                 <p className="meta">
                   {[formatSize(clip.sizeBytes), formatDate(clip.createdAt)].filter(Boolean).join(" · ")}
@@ -1028,46 +986,15 @@ function CutModal({
   const playheadLeft = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.7)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-        padding: 16,
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--bg)",
-          border: "1px solid #4f4f80",
-          borderRadius: 10,
-          padding: 20,
-          maxWidth: 520,
-          width: "100%",
-          // svh (not vh, and not dvh either) - on mobile, vh is fixed to
-          // the viewport size with the browser's own nav/address bar
-          // hidden, so when that bar is showing (e.g. right after opening
-          // the modal) the modal renders taller than what's actually
-          // visible and the bottom action row (Play/Cancelar/Salvar) gets
-          // clipped. dvh fixes that but recalculates continuously as the
-          // bar animates in/out during scroll, which made the modal's own
-          // content visibly shift/jitter while scrolling inside it. svh is
-          // the STABLE viewport size as if the bar were always showing
-          // (the smallest case) - never clips, never recalculates mid-scroll.
-          maxHeight: "calc(100svh - 32px)",
-          overflowY: "auto",
-          boxSizing: "border-box",
-        }}
-      >
-        <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>Cortar vídeo</div>
-        <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 16 }}>
-          {clip.name}
-        </div>
+    <div className="modal-overlay">
+      {/* .modal-cut caps the height at calc(100svh - 32px) with internal
+          scroll - svh (not vh, and not dvh either) so the bottom action
+          row (Play/Cancelar/Salvar) is never clipped behind the mobile
+          browser bar and doesn't jitter while scrolling. Full rationale in
+          the .modal-cut comment in globals.css. */}
+      <div className="modal modal-cut" style={{ maxWidth: 520 }}>
+        <div className="modal-title">Cortar vídeo</div>
+        <div className="modal-subtitle">{clip.name}</div>
 
         {clip.downloadUrl ? (
           // No aspectRatio here on purpose - Shorts are 9:16, but Palavra
@@ -1081,81 +1008,27 @@ function CutModal({
             ref={videoRef}
             src={clip.downloadUrl}
             onPause={() => setIsPreviewPlaying(false)}
-            style={{
-              display: "block",
-              margin: "0 auto 16px",
-              maxWidth: "100%",
-              maxHeight: CUT_PREVIEW_MAX_HEIGHT,
-              borderRadius: 8,
-              background: "#000",
-              objectFit: "contain",
-            }}
+            className="media-frame"
+            style={{ maxHeight: CUT_PREVIEW_MAX_HEIGHT }}
           />
         ) : (
-          <div
-            style={{
-              margin: "0 auto 16px",
-              width: "100%",
-              height: CUT_PREVIEW_MAX_HEIGHT,
-              background: "#000",
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#757580",
-              fontSize: 13,
-              boxSizing: "border-box",
-            }}
-          >
+          <div className="media-placeholder" style={{ height: CUT_PREVIEW_MAX_HEIGHT }}>
             Pré-visualização não disponível
           </div>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 12,
-            color: "var(--text-dim)",
-            marginBottom: 6,
-          }}
-        >
+        <div className="trim-times">
           <span>
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
           <span>Selecionado: {formatTime(effectiveEnd - effectiveStart)}</span>
         </div>
-        <div
-          ref={trackRef}
-          style={{
-            position: "relative",
-            height: 8,
-            background: "var(--border)",
-            borderRadius: 4,
-            marginBottom: 16,
-          }}
-        >
+        <div ref={trackRef} className="trim-track">
           <div
-            style={{
-              position: "absolute",
-              top: 0,
-              left: `${fillStart}%`,
-              width: `${fillWidth}%`,
-              height: "100%",
-              background: "#6199f6",
-              borderRadius: 4,
-            }}
+            className="trim-range"
+            style={{ left: `${fillStart}%`, width: `${fillWidth}%` }}
           />
-          <div
-            style={{
-              position: "absolute",
-              left: `${playheadLeft}%`,
-              top: -4,
-              width: 2,
-              height: 16,
-              background: "#fcfcfc",
-            }}
-          />
+          <div className="trim-playhead" style={{ left: `${playheadLeft}%` }} />
           {/* Start/end are dragged directly on this one track instead of
               two separate <input type="range"> sliders - a handle on each
               edge of the selected (blue) region. Pointer capture keeps
@@ -1172,19 +1045,8 @@ function CutModal({
             onPointerMove={(e) => handleHandlePointerMove("start", e)}
             onPointerUp={handleHandlePointerUp}
             onKeyDown={(e) => handleHandleKeyDown("start", e)}
-            style={{
-              position: "absolute",
-              left: `${fillStart}%`,
-              top: "50%",
-              width: 16,
-              height: 16,
-              borderRadius: "50%",
-              background: "#6199f6",
-              border: "2px solid #fcfcfc",
-              transform: "translate(-50%, -50%)",
-              cursor: "grab",
-              touchAction: "none",
-            }}
+            className="trim-handle"
+            style={{ left: `${fillStart}%` }}
           />
           <div
             role="slider"
@@ -1197,19 +1059,8 @@ function CutModal({
             onPointerMove={(e) => handleHandlePointerMove("end", e)}
             onPointerUp={handleHandlePointerUp}
             onKeyDown={(e) => handleHandleKeyDown("end", e)}
-            style={{
-              position: "absolute",
-              left: `${fillStart + fillWidth}%`,
-              top: "50%",
-              width: 16,
-              height: 16,
-              borderRadius: "50%",
-              background: "#6199f6",
-              border: "2px solid #fcfcfc",
-              transform: "translate(-50%, -50%)",
-              cursor: "grab",
-              touchAction: "none",
-            }}
+            className="trim-handle"
+            style={{ left: `${fillStart + fillWidth}%` }}
           />
         </div>
 
@@ -1217,77 +1068,55 @@ function CutModal({
             without relying on drag accuracy" - a +/- 0.1s stepper next to
             each boundary, since dragging precisely on a small touch screen
             isn't reliable (see design.md's "Mobile precision" decision). */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            fontSize: 12,
-            color: "var(--text-dim)",
-            marginBottom: 20,
-            gap: 8,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <div className="trim-steppers">
+          <div className="stepper">
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn icon-btn-text"
               onClick={() => handleTrimStartChange(effectiveStart - TRIM_STEP_SEC)}
               title="-0.1s"
               aria-label="Diminuir início em 0.1s"
-              style={{ fontSize: 16, lineHeight: 1 }}
             >
               −
             </button>
             <span>Início: {formatTime(effectiveStart)}</span>
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn icon-btn-text"
               onClick={() => handleTrimStartChange(effectiveStart + TRIM_STEP_SEC)}
               title="+0.1s"
               aria-label="Aumentar início em 0.1s"
-              style={{ fontSize: 16, lineHeight: 1 }}
             >
               +
             </button>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div className="stepper">
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn icon-btn-text"
               onClick={() => handleTrimEndChange(effectiveEnd - TRIM_STEP_SEC)}
               title="-0.1s"
               aria-label="Diminuir fim em 0.1s"
-              style={{ fontSize: 16, lineHeight: 1 }}
             >
               −
             </button>
             <span>Fim: {formatTime(effectiveEnd)}</span>
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn icon-btn-text"
               onClick={() => handleTrimEndChange(effectiveEnd + TRIM_STEP_SEC)}
               title="+0.1s"
               aria-label="Aumentar fim em 0.1s"
-              style={{ fontSize: 16, lineHeight: 1 }}
             >
               +
             </button>
           </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 20,
-          }}
-        >
+        <div className="setting-row">
           <div>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>Remover silêncios (Jump Cut)</div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            <div className="setting-title">Remover silêncios (Jump Cut)</div>
+            <div className="setting-hint">
               Corta automaticamente os trechos sem fala no vídeo inteiro
             </div>
           </div>
@@ -1297,52 +1126,18 @@ function CutModal({
             aria-checked={removeSilence}
             aria-label="Remover silêncios (Jump Cut)"
             onClick={handleToggleRemoveSilence}
-            style={{
-              position: "relative",
-              width: 40,
-              height: 22,
-              flexShrink: 0,
-              borderRadius: 999,
-              border: "none",
-              background: removeSilence ? "#6199f6" : "var(--border)",
-              cursor: "pointer",
-              padding: 0,
-            }}
+            className="switch"
           >
-            <span
-              style={{
-                position: "absolute",
-                top: 2,
-                left: removeSilence ? 20 : 2,
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: "#fcfcfc",
-                transition: "left 0.15s",
-              }}
-            />
+            <span className="knob" />
           </button>
         </div>
 
         {error && (
-          <p className="error-text" style={{ marginBottom: 12 }}>
-            {error}
-          </p>
+          <p className="error-text">{error}</p>
         )}
 
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            position: "sticky",
-            bottom: 0,
-            background: "var(--bg)",
-            paddingTop: 8,
-          }}
-        >
-          <div style={{ display: "flex", gap: 8 }}>
+        <div className="modal-cut-footer">
+          <div className="btn-row">
             <button
               className="icon-btn"
               onClick={handlePreview}
@@ -1362,7 +1157,7 @@ function CutModal({
               <StopFilledIcon />
             </button>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="btn-row">
             <button
               className="icon-btn"
               onClick={handleCancel}
@@ -1372,26 +1167,11 @@ function CutModal({
               <CloseIcon />
             </button>
             <button
-              className="icon-btn"
+              className="icon-btn icon-btn-solid"
               onClick={handleSave}
               disabled={isUnchanged}
               title={isUnchanged ? "Ajuste o início ou o fim para cortar" : "Salvar corte"}
               aria-label="Salvar corte"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 32,
-                height: 32,
-                flexShrink: 0,
-                padding: 0,
-                borderRadius: 999,
-                border: "none",
-                background: "#fcfcfc",
-                color: "#0a0a13",
-                cursor: isUnchanged ? "default" : "pointer",
-                opacity: isUnchanged ? 0.4 : 1,
-              }}
             >
               <SaveIcon />
             </button>
@@ -1402,34 +1182,12 @@ function CutModal({
   );
 }
 
-// Shared overlay/card chrome matching the prototype's modal style (also
-// used by CutModal above): dark overlay, #4f4f80 border, 10px radius.
+// Shared overlay/dialog chrome (also used by CutModal above): blurred
+// scrim (.modal-overlay) + raised dialog surface (.modal) from globals.css.
 function ModalOverlay({ children, maxWidth }: { children: ReactNode; maxWidth: number }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.7)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-        padding: 16,
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--panel)",
-          border: "1px solid #4f4f80",
-          borderRadius: 10,
-          padding: 24,
-          maxWidth,
-          width: "100%",
-          boxSizing: "border-box",
-        }}
-      >
+    <div className="modal-overlay">
+      <div className="modal" style={{ maxWidth }}>
         {children}
       </div>
     </div>
@@ -1452,51 +1210,21 @@ function RenameModal({
   const [value, setValue] = useState(clip.name);
   return (
     <ModalOverlay maxWidth={420}>
-      <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 16 }}>Renomear clipe</div>
+      <div className="modal-title">Renomear clipe</div>
       <input
         autoFocus
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        style={{
-          width: "100%",
-          background: "#0f0f12",
-          border: "1px solid var(--border)",
-          borderRadius: 4,
-          color: "var(--text)",
-          padding: "10px 12px",
-          marginBottom: 20,
-          boxSizing: "border-box",
-        }}
+        className="input-field"
       />
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button
-          onClick={onClose}
-          disabled={busy}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#a3a3b3",
-            borderRadius: 100,
-            padding: "10px 20px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
+      <div className="modal-footer">
+        <button onClick={onClose} disabled={busy} className="btn-ghost">
           Cancelar
         </button>
         <button
           onClick={() => onSave(value)}
           disabled={busy || !value.trim()}
-          style={{
-            background: "#fcfcfc",
-            color: "#0a0a13",
-            border: "none",
-            borderRadius: 100,
-            padding: "10px 20px",
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: "pointer",
-          }}
+          className="btn-primary"
         >
           Salvar
         </button>
@@ -1521,25 +1249,13 @@ function DeleteConfirmModal({
 }) {
   return (
     <ModalOverlay maxWidth={440}>
-      <div style={{ fontSize: 18, fontWeight: 500, marginBottom: 8 }}>Excluir clipe</div>
-      <p style={{ fontSize: 14, color: "var(--text-dim)", marginBottom: 20 }}>
+      <div className="modal-title">Excluir clipe</div>
+      <p className="modal-text">
         Tem certeza que deseja excluir &quot;{clip.hook || clip.name}&quot;? Essa ação não pode
         ser desfeita.
       </p>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button
-          onClick={onClose}
-          disabled={busy}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "#a3a3b3",
-            borderRadius: 100,
-            padding: "10px 20px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
+      <div className="modal-footer">
+        <button onClick={onClose} disabled={busy} className="btn-ghost">
           Cancelar
         </button>
         <button className="btn-danger" onClick={onConfirm} disabled={busy}>

@@ -1,19 +1,19 @@
-<!-- @dsCard group="Actions" height=140 subtitle="Renderização estática" -->
+<!-- @dsCard group="Actions" height=170 subtitle="Renderização estática" -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"><title>PillToggle</title>
 <style>body{padding:16px;max-width:560px}</style>
 </head>
 <body>
-<div class="field" style="margin-bottom:16px">
-  <div style="display:flex;gap:8px">
-    <button class="pill-toggle pill-toggle-active" style="flex:1">Link do YouTube</button>
-    <button class="pill-toggle" style="flex:1">Enviar arquivo</button>
+<div class="field">
+  <div class="toggle-group">
+    <button class="pill-toggle pill-toggle-active">Link do YouTube</button>
+    <button class="pill-toggle">Enviar arquivo</button>
   </div>
 </div>
-<div class="field">
+<div class="field" style="margin-bottom:0">
   <label>Tipo de conteúdo *</label>
-  <div style="display:flex;gap:8px;margin-top:4px" role="radiogroup">
+  <div class="toggle-group" role="radiogroup">
     <button class="pill-toggle pill-toggle-active" role="radio" aria-checked="true">Pregação</button>
     <button class="pill-toggle" role="radio" aria-checked="false">Podcast</button>
     <button class="pill-toggle" role="radio" aria-checked="false">Louvor</button>

@@ -68,30 +68,22 @@ export default function UserManagement() {
     await load();
   }
 
-  const selectStyle: React.CSSProperties = {
-    background: "#0f0f12",
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    color: "var(--text)",
-    padding: "6px 8px",
-  };
-
   return (
     <div>
-      <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Usuários</h2>
+      <h2 className="card-title">Usuários</h2>
 
       {justCreated && (
-        <div className="card" style={{ padding: 16, marginBottom: 16, borderColor: "var(--status-concluido)" }}>
+        <div className="callout-success">
           Usuário <strong>{justCreated.email}</strong> criado. Senha inicial (compartilhe com a pessoa, isso não
           aparece de novo): <code>{justCreated.password}</code>
         </div>
       )}
-      {error && <p className="error-text" style={{ marginBottom: 12 }}>{error}</p>}
+      {error && <p className="error-text">{error}</p>}
 
       {users === null ? (
-        <p style={{ color: "var(--text-dim)" }}>Carregando...</p>
+        <p className="loading-text">Carregando...</p>
       ) : (
-        <div className="card" style={{ overflow: "hidden", marginBottom: 16 }}>
+        <div className="card table-card">
           <table>
             <thead>
               <tr>
@@ -111,7 +103,7 @@ export default function UserManagement() {
                     <select
                       value={u.role}
                       onChange={(e) => changeRole(u, e.target.value as Role)}
-                      style={selectStyle}
+                      className="select"
                     >
                       <option value="CLIPADOR">Clipador</option>
                       <option value="UPLOADER">Uploader</option>
@@ -120,11 +112,7 @@ export default function UserManagement() {
                   </td>
                   <td data-label="Status">{u.active ? "Ativo" : "Desativado"}</td>
                   <td data-label="">
-                    <button
-                      className="btn-secondary"
-                      onClick={() => toggleActive(u)}
-                      style={{ borderRadius: 999, padding: "6px 14px" }}
-                    >
+                    <button className="btn-secondary btn-sm" onClick={() => toggleActive(u)}>
                       {u.active ? "Desativar" : "Reativar"}
                     </button>
                   </td>
@@ -135,15 +123,15 @@ export default function UserManagement() {
         </div>
       )}
 
-      <div className="card" style={{ padding: 16 }}>
-        <p style={{ margin: "0 0 12px", color: "var(--text-dim)", fontSize: "0.85rem" }}>Adicionar usuário</p>
-        <form onSubmit={handleCreate} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="card card-pad">
+        <p className="section-label">Adicionar usuário</p>
+        <form onSubmit={handleCreate} className="inline-form">
           <input
             placeholder="Nome"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            style={{ flex: "1 1 160px", background: "#0f0f12", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "8px 10px" }}
+            className="input-field"
           />
           <input
             placeholder="E-mail"
@@ -151,19 +139,14 @@ export default function UserManagement() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ flex: "1 1 200px", background: "#0f0f12", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "8px 10px" }}
+            className="input-field"
           />
-          <select value={role} onChange={(e) => setRole(e.target.value as Role)} style={selectStyle}>
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="select">
             <option value="CLIPADOR">Clipador</option>
             <option value="UPLOADER">Uploader</option>
             <option value="ADMIN">Admin</option>
           </select>
-          <button
-            className="btn-primary"
-            type="submit"
-            disabled={busy}
-            style={{ width: "auto", padding: "10px 20px" }}
-          >
+          <button className="btn-primary" type="submit" disabled={busy}>
             Adicionar
           </button>
         </form>

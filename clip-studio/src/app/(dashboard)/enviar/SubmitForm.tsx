@@ -245,13 +245,12 @@ export default function SubmitForm() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="field" style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div className="field">
+        <div className="toggle-group">
           <button
             type="button"
             className={sourceType === "link" ? "pill-toggle pill-toggle-active" : "pill-toggle"}
             onClick={() => setSourceType("link")}
-            style={{ flex: 1 }}
           >
             Link do YouTube
           </button>
@@ -259,16 +258,15 @@ export default function SubmitForm() {
             type="button"
             className={sourceType === "file" ? "pill-toggle pill-toggle-active" : "pill-toggle"}
             onClick={() => setSourceType("file")}
-            style={{ flex: 1 }}
           >
             Enviar arquivo
           </button>
         </div>
       </div>
 
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label>Tipo de conteúdo *</label>
-        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <div className="toggle-group">
           <button
             type="button"
             role="radio"
@@ -299,7 +297,7 @@ export default function SubmitForm() {
         </div>
       </div>
 
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label htmlFor="title">Título do vídeo</label>
         <input
           id="title"
@@ -312,7 +310,7 @@ export default function SubmitForm() {
       </div>
 
       {sourceType === "link" ? (
-        <div className="field" style={{ marginBottom: 16 }}>
+        <div className="field">
           <label htmlFor="youtubeUrl">Link do YouTube</label>
           <input
             id="youtubeUrl"
@@ -324,7 +322,7 @@ export default function SubmitForm() {
           />
         </div>
       ) : (
-        <div className="field" style={{ marginBottom: 16 }}>
+        <div className="field">
           <label htmlFor="videoFile">Arquivo de vídeo</label>
           {/* The native file input's own button/text can't be restyled
               consistently across browsers, so it's visually hidden and
@@ -341,15 +339,7 @@ export default function SubmitForm() {
                 fileInputRef.current?.click();
               }
             }}
-            style={{
-              width: "100%",
-              background: "#0a0a13",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              color: file ? "var(--text)" : "var(--text-dim)",
-              padding: "10px 12px",
-              cursor: "pointer",
-            }}
+            className={file ? "file-picker has-file" : "file-picker"}
           >
             {file ? file.name : "Clique para selecionar um arquivo de vídeo"}
           </div>
@@ -360,17 +350,7 @@ export default function SubmitForm() {
             required
             accept="video/*"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            style={{
-              position: "absolute",
-              width: 1,
-              height: 1,
-              padding: 0,
-              margin: -1,
-              overflow: "hidden",
-              clip: "rect(0,0,0,0)",
-              whiteSpace: "nowrap",
-              border: 0,
-            }}
+            className="visually-hidden"
           />
         </div>
       )}
@@ -381,61 +361,27 @@ export default function SubmitForm() {
           avoids offering a choice that doesn't mean anything for that
           content type. */}
       {contentType === "PREGACAO" && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 16,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 500 }}>Modo Palavra Completa</div>
+        <div className="setting-row">
+          <div className="setting-title">Modo Palavra Completa</div>
           <button
             type="button"
             role="switch"
             aria-checked={fullWordMode}
             aria-label="Modo Palavra Completa"
             onClick={() => setFullWordMode((v) => !v)}
-            style={{
-              position: "relative",
-              width: 40,
-              height: 22,
-              flexShrink: 0,
-              borderRadius: 999,
-              border: "none",
-              background: fullWordMode ? "#6199f6" : "var(--border)",
-              cursor: "pointer",
-              padding: 0,
-            }}
+            className="switch"
           >
-            <span
-              style={{
-                position: "absolute",
-                top: 2,
-                left: fullWordMode ? 20 : 2,
-                width: 18,
-                height: 18,
-                borderRadius: "50%",
-                background: "#fcfcfc",
-                transition: "left 0.15s",
-              }}
-            />
+            <span className="knob" />
           </button>
         </div>
       )}
 
       {error && (
-        <p className="error-text" style={{ marginBottom: 12 }}>
+        <p className="error-text">
           {error}
         </p>
       )}
-      <button
-        className="btn-primary"
-        type="submit"
-        disabled={loading}
-        style={{ width: "auto", padding: "12px 24px" }}
-      >
+      <button className="btn-primary" type="submit" disabled={loading}>
         {loading ? "Enviando..." : "Enviar"}
       </button>
     </form>

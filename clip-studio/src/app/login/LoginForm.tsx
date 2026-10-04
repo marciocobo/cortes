@@ -38,7 +38,7 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label htmlFor="email">E-mail</label>
         <input
           id="email"
@@ -50,7 +50,7 @@ export default function LoginForm() {
           placeholder="voce@estudio.com"
         />
       </div>
-      <div className="field" style={{ marginBottom: 16 }}>
+      <div className="field">
         <label htmlFor="password">Senha</label>
         <input
           id="password"
@@ -62,11 +62,11 @@ export default function LoginForm() {
         />
       </div>
       {error && (
-        <p className="error-text" style={{ marginBottom: 12 }}>
+        <p className="error-text">
           {error}
         </p>
       )}
-      <button className="btn-primary" type="submit" disabled={loading}>
+      <button className="btn-primary btn-block" type="submit" disabled={loading}>
         {loading ? "Entrando..." : "Entrar"}
       </button>
     </form>
