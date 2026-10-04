@@ -15,6 +15,13 @@ function resolveMode(contentType: ContentType, fullWordMode: boolean): Submissio
   return fullWordMode ? "PALAVRA_COMPLETA" : "SHORTS";
 }
 
+// Example title per content type, so the hint matches what is selected.
+const TITLE_PLACEHOLDER: Record<ContentType, string> = {
+  PREGACAO: "Ex: Culto de domingo - Pr. Daniel dos Santos",
+  PODCAST: "Ex: Podcast #58 - Convidado especial",
+  LOUVOR: "Ex: Louvor - Culto de 27/09",
+};
+
 // resumable-upload spec: remembers an in-progress upload's identity across
 // a reload/reopened tab (a File object itself can't survive that - the
 // browser doesn't persist it), so re-selecting the SAME file lets the user
@@ -265,8 +272,8 @@ export default function SubmitForm() {
       </div>
 
       <div className="field">
-        <label>Tipo de conteúdo *</label>
-        <div className="toggle-group">
+        <label id="content-type-label">Tipo de conteúdo *</label>
+        <div className="toggle-group" role="radiogroup" aria-labelledby="content-type-label">
           <button
             type="button"
             role="radio"
@@ -305,7 +312,7 @@ export default function SubmitForm() {
           required
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Ex: Podcast #58 - Convidado especial"
+          placeholder={TITLE_PLACEHOLDER[contentType]}
         />
       </div>
 

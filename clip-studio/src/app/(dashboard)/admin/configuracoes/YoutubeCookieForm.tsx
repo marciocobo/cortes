@@ -70,7 +70,7 @@ export default function YoutubeCookieForm() {
         </p>
       )}
       <button
-        className="btn-primary"
+        className="btn-primary btn-block"
         type="submit"
         disabled={busy || !cookiesTxt.trim()}
       >

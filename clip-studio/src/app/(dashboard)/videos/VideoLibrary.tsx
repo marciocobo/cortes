@@ -617,8 +617,10 @@ export default function VideoLibrary() {
             <div key={clip.itemId} className="card video-card">
               <div className="thumb-wrap">
                 {clip.thumbnailUrl ? (
+                  // lazy: a type can hold hundreds of clips, and loading every
+                  // thumbnail at once froze the tab during QA.
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={clip.thumbnailUrl} alt="" className="thumb" />
+                  <img src={clip.thumbnailUrl} alt="" className="thumb" loading="lazy" decoding="async" />
                 ) : (
                   <span className="play-icon" />
                 )}
@@ -898,6 +900,8 @@ function CutModal({
     clearDraft(clip.itemId);
     onClose();
   }
+  // Esc behaves like the X button.
+  useEscapeKey(handleCancel);
 
   // The button doubles as play/stop: clicking while already previewing
   // stops playback instead of restarting it from effectiveStart.
@@ -986,7 +990,7 @@ function CutModal({
   const playheadLeft = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Cortar vídeo">
       {/* .modal-cut caps the height at calc(100svh - 32px) with internal
           scroll - svh (not vh, and not dvh either) so the bottom action
           row (Play/Cancelar/Salvar) is never clipped behind the mobile
@@ -1184,9 +1188,39 @@ function CutModal({
 
 // Shared overlay/dialog chrome (also used by CutModal above): blurred
 // scrim (.modal-overlay) + raised dialog surface (.modal) from globals.css.
-function ModalOverlay({ children, maxWidth }: { children: ReactNode; maxWidth: number }) {
+// Closes a dialog on Escape. The latest callback is kept in a ref so the
+// listener is attached once, not re-bound on every render.
+function useEscapeKey(onEscape: () => void, disabled = false) {
+  const ref = useRef(onEscape);
+  useEffect(() => {
+    ref.current = onEscape;
+  });
+  useEffect(() => {
+    if (disabled) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") ref.current();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [disabled]);
+}
+
+function ModalOverlay({
+  children,
+  maxWidth,
+  label,
+  onClose,
+  busy = false,
+}: {
+  children: ReactNode;
+  maxWidth: number;
+  label: string;
+  onClose: () => void;
+  busy?: boolean;
+}) {
+  useEscapeKey(onClose, busy);
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={label}>
       <div className="modal" style={{ maxWidth }}>
         {children}
       </div>
@@ -1209,7 +1243,7 @@ function RenameModal({
 }) {
   const [value, setValue] = useState(clip.name);
   return (
-    <ModalOverlay maxWidth={420}>
+    <ModalOverlay maxWidth={420} label="Renomear clipe" onClose={onClose} busy={busy}>
       <div className="modal-title">Renomear clipe</div>
       <input
         autoFocus
@@ -1248,7 +1282,7 @@ function DeleteConfirmModal({
   onConfirm: () => void;
 }) {
   return (
-    <ModalOverlay maxWidth={440}>
+    <ModalOverlay maxWidth={440} label="Excluir clipe" onClose={onClose} busy={busy}>
       <div className="modal-title">Excluir clipe</div>
       <p className="modal-text">
         Tem certeza que deseja excluir &quot;{clip.hook || clip.name}&quot;? Essa ação não pode

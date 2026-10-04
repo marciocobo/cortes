@@ -112,8 +112,15 @@ function ReprocessIcon() {
 // + .modal from globals.css) - kept local here since neither file shares
 // a components module today and this is the only modal on this page.
 function ModalOverlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
   return (
-    <div onClick={onClose} className="modal-overlay">
+    <div onClick={onClose} className="modal-overlay" role="dialog" aria-modal="true" aria-label="Histórico de tentativas">
       <div onClick={(e) => e.stopPropagation()} className="modal" style={{ maxWidth: 480 }}>
         {children}
       </div>
@@ -299,6 +306,7 @@ export default function SubmissionHistory() {
                         onClick={() => handleReprocess(s.id)}
                         disabled={reprocessingId === s.id}
                         title="Reprocessar"
+                        aria-label="Reprocessar"
                       >
                         <ReprocessIcon />
                       </button>

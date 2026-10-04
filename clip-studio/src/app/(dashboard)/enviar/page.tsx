@@ -8,7 +8,7 @@ export default async function EnviarPage() {
     <div>
       <p className="eyebrow">Automação</p>
       <h1>Enviar Vídeo</h1>
-      <p className="page-intro">Cole o link do vídeo completo do YouTube.</p>
+      <p className="page-intro">Cole o link do vídeo completo do YouTube ou envie o arquivo.</p>
       <div className="card form-card">
         <SubmitForm />
       </div>

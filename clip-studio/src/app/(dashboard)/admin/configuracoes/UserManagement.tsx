@@ -84,7 +84,7 @@ export default function UserManagement() {
         <p className="loading-text">Carregando...</p>
       ) : (
         <div className="card table-card">
-          <table>
+          <table className="table-controls">
             <thead>
               <tr>
                 <th>Nome</th>

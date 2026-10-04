@@ -67,25 +67,34 @@ export default function Sidebar({
   name,
   open,
   onToggle,
+  onNavigate,
 }: {
   role: Role;
   name: string;
   open: boolean;
   onToggle: () => void;
+  onNavigate: () => void;
 }) {
   const pathname = usePathname();
   const links = ALL_LINKS.filter((link) => (link.roles as readonly string[]).includes(role));
 
   return (
     <>
-      <button className="hamburger-btn" aria-label="Menu" title="Menu" onClick={onToggle}>
+      <button
+        className="hamburger-btn"
+        aria-label="Menu"
+        title="Menu"
+        aria-expanded={open}
+        aria-controls="app-sidebar"
+        onClick={onToggle}
+      >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           <line x1="3" y1="6" x2="21" y2="6" />
           <line x1="3" y1="12" x2="21" y2="12" />
           <line x1="3" y1="18" x2="21" y2="18" />
         </svg>
       </button>
-      <aside className={open ? "sidebar sidebar-open" : "sidebar"}>
+      <aside id="app-sidebar" className={open ? "sidebar sidebar-open" : "sidebar"}>
         <div className="logo">Clip Studio</div>
         <nav>
           {links.map((link) => (
@@ -93,6 +102,7 @@ export default function Sidebar({
               key={link.href}
               href={link.href}
               className={pathname.startsWith(link.href) ? "active" : undefined}
+              onClick={onNavigate}
             >
               <NavIcon href={link.href} />
               {link.label}
